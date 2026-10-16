@@ -1,0 +1,2 @@
+@props(['x', 'y', 'w', 'h', 'label' => '', 'source' => 'shop-reference.png'])
+<span {{ $attributes->class(['reference-art']) }} role="img" aria-label="{{ $label }}" style="--art-ratio:{{ $w }}/{{ $h }};background-image:url('{{ asset('images/'.$source) }}');background-size:{{ 1086 / $w * 100 }}% {{ 1448 / $h * 100 }}%;background-position:{{ $x / (1086 - $w) * 100 }}% {{ $y / (1448 - $h) * 100 }}%"></span>
