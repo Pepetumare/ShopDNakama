@@ -7,7 +7,7 @@
         <p class="eyebrow">SHOP D. NAKAMA · 仲間</p>
         <h1>CATÁLOGO</h1>
         <h2>Anime, cultura japonesa y mucho más</h2>
-        <p>Descubre productos para verdaderos nakamas: manga, figuras, merchandising, estampados, impresión 3D y más.</p>
+        <p>Descubre productos para verdaderos nakamas: manga, figuras, billeteras, merchandising, accesorios y cultura japonesa.</p>
     </div>
 </section>
 <section class="shop-container catalog-section" id="productos" x-data="{ filtersOpen: false }" @keydown.escape.window="if (filtersOpen) { filtersOpen = false; $refs.filterToggle.focus() }">
@@ -32,8 +32,8 @@
                     @endforeach
                     <label for="catalog-order">Ordenar por</label>
                     <select id="catalog-order" name="orden" onchange="this.form.submit()">
-                        @foreach(['vendidos' => 'Más vendidos', 'precio-menor' => 'Precio menor', 'precio-mayor' => 'Precio mayor', 'nuevos' => 'Más nuevos'] as $key => $label)
-                            <option value="{{ $key }}" @selected(request('orden', 'vendidos') === $key)>{{ $label }}</option>
+                        @foreach(['recientes' => 'Más recientes', 'precio-menor' => 'Precio menor', 'precio-mayor' => 'Precio mayor', 'nombre' => 'Nombre'] as $key => $label)
+                            <option value="{{ $key }}" @selected(request('orden', 'recientes') === $key)>{{ $label }}</option>
                         @endforeach
                     </select>
                     <noscript><button type="submit">Ordenar</button></noscript>
@@ -56,7 +56,7 @@
                     @if($products->hasMorePages())<a href="{{ $products->nextPageUrl() }}" rel="next" aria-label="Página siguiente">→</a>@endif
                 </nav>
             @endif
-            <p class="catalog-demo">Catálogo de muestra. Imágenes ilustrativas. Más vendidos utiliza un orden de ejemplo.</p>
+
         </div>
     </div>
 </section>

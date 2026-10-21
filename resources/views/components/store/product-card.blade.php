@@ -1,2 +1,29 @@
 @props(['product'])
-<article class="product-card" x-data="{ favorite: false }"><div class="product-image"><x-store.art :x="$product['x']" :y="747" :w="150" :h="134" :label="$product['name']"/>@if($product['badge'])<span @class(['product-badge', 'sale' => $product['badge'] === 'Oferta'])>{{ $product['badge'] }}</span>@endif<button type="button" class="product-favorite" @click="favorite = !favorite" :aria-pressed="favorite" :class="{ selected: favorite }" aria-label="Favorito: {{ $product['name'] }}" title="Favorito de muestra"><x-store.icon name="heart" size="18"/></button></div><div class="product-info"><h3>{{ $product['name'] }}</h3>@if(isset($product['in_stock']) && !$product['in_stock'])<small class="product-stock">Agotado</small>@endif<div class="price-row"><strong @class(['sale-price' => $product['badge'] === 'Oferta'])>$ {{ number_format($product['price'], 0, ',', '.') }}</strong>@if($product['old_price'])<del>$ {{ number_format($product['old_price'], 0, ',', '.') }}</del>@endif<button class="product-cart" type="button" disabled aria-label="Carrito próximamente" title="Carrito próximamente"><x-store.icon name="cart" size="19"/></button></div></div></article>
+@php($available = $product->is_active && $product->category->is_active)
+<article class="product-card">
+    <div class="product-image">
+        @if($available)<a href="{{ route('producto.show', $product) }}" aria-label="Ver {{ $product->name }}">@endif
+            <x-store.image :path="$product->images->first()?->image" :alt="$product->images->first()?->alt_text ?: $product->name" />
+        @if($available)</a>@endif
+        @if($product->badge)
+            <span @class(['product-badge', 'sale' => $product->on_sale])>{{ $product->badge }}</span>
+        @endif
+        <x-store.favorite-button :product="$product"/>
+    </div>
+    <div class="product-info">
+        <h3>@if($available)<a href="{{ route('producto.show', $product) }}">{{ $product->name }}</a>@else{{ $product->name }}@endif</h3>
+        <small class="product-stock">{{ $available ? $product->stock_label : 'No disponible' }}</small>
+        <div class="price-row">
+            <strong @class(['sale-price' => $product->on_sale])><x-store.price :amount="$product->current_price" /></strong>
+            @if($product->on_sale)
+                <del><x-store.price :amount="$product->price" /></del>
+            @endif
+            <form method="post" action="{{ route('cart.store') }}">
+                @csrf
+                <input type="hidden" name="product_id" value="{{ $product->id }}">
+                <input type="hidden" name="quantity" value="1">
+                <button class="product-cart" type="submit" @disabled(!$available || $product->stock < 1) aria-label="{{ $available && $product->stock > 0 ? 'Agregar al carrito: '.$product->name : 'Agotado o no disponible: '.$product->name }}" title="{{ $product->stock > 0 ? 'Agregar al carrito' : 'Agotado' }}"><x-store.icon name="cart" size="19"/></button>
+            </form>
+        </div>
+    </div>
+</article>

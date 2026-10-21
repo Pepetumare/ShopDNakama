@@ -45,6 +45,7 @@ class RegisteredUserController extends Controller
         event(new Registered($user));
 
         Auth::login($user);
+        app(\App\Services\ShoppingCart::class)->merge($request);
 
         return redirect(route('dashboard', absolute: false));
     }

@@ -1,0 +1,2 @@
+@props(['order'])
+<dl class="order-totals"><div><dt>Subtotal</dt><dd><x-store.price :amount="$order->subtotal"/></dd></div><div><dt>Despacho</dt><dd><x-store.price :amount="$order->shipping_cost"/></dd></div><div><dt>Descuentos</dt><dd>−<x-store.price :amount="$order->discount_total"/></dd></div><div class="order-grand-total"><dt>Total</dt><dd><x-store.price :amount="$order->total"/></dd></div></dl>

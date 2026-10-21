@@ -27,6 +27,7 @@ class AuthenticatedSessionController extends Controller
         $request->authenticate();
 
         $request->session()->regenerate();
+        app(\App\Services\ShoppingCart::class)->merge($request);
 
         return redirect()->intended(route('dashboard', absolute: false));
     }

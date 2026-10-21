@@ -1,6 +1,12 @@
 <?php
 
 return [
+    'mercadopago' => [
+        'public_key' => env('MERCADOPAGO_PUBLIC_KEY'),
+        'access_token' => env('MERCADOPAGO_ACCESS_TOKEN'),
+        'webhook_secret' => env('MERCADOPAGO_WEBHOOK_SECRET'),
+        'shipping_cost' => env('MERCADOPAGO_SHIPPING_COST', 3990),
+    ],
 
     /*
     |--------------------------------------------------------------------------
