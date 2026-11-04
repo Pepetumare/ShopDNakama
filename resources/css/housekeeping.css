@@ -149,3 +149,5 @@ svg{flex-shrink:0;vertical-align:middle}
 .order-pagination{display:flex;justify-content:center;align-items:center;gap:14px;flex-wrap:wrap;margin-top:24px;font-size:14px}
 .order-pagination a{padding:9px 12px;border:1px solid #e1e6e2;border-radius:5px;color:#087a2f}
 .order-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+.custom-admin-details h2{margin:24px 0 16px}.custom-admin-details h3{margin:20px 0 12px}.custom-admin-details dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px}.custom-admin-details dt{font-weight:600;color:#52604b}.custom-admin-details dd{margin:6px 0;overflow-wrap:anywhere}.custom-admin-details .custom-design{margin:24px 0}.custom-admin-details .custom-design p{margin:12px 0}

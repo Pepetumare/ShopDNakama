@@ -29,6 +29,12 @@ return [
     */
 
     'disks' => [
+        'custom_orders' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/custom-orders'),
+            'serve' => false,
+            'throw' => true,
+        ],
 
         'local' => [
             'driver' => 'local',

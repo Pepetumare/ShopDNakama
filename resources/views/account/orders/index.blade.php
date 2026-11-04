@@ -5,7 +5,7 @@
     <thead><tr><th scope="col">Número de pedido</th><th scope="col">Fecha</th><th scope="col">Estado</th><th scope="col">Total</th><th scope="col">Detalle</th></tr></thead>
     <tbody>
     @forelse($orders as $order)
-        <tr><td>{{ $order->number }}</td><td>{{ $order->created_at?->format('d/m/Y') }}</td><td><span class="account-status">{{ $order->status_label }}</span></td><td><x-store.price :amount="$order->total"/></td><td><a href="{{ route('account.orders.show', $order) }}">Ver pedido →</a></td></tr>
+        <tr><td>{{ $order->number }}@if($order->customRequest)<small> · Personalizado {{ $order->customRequest->request_number }}</small>@endif</td><td>{{ $order->created_at?->format('d/m/Y') }}</td><td><span class="account-status">{{ $order->status_label }}</span></td><td><x-store.price :amount="$order->total"/></td><td><a href="{{ route('account.orders.show', $order) }}">Ver pedido →</a></td></tr>
     @empty
         <tr><td colspan="5">Todavía no tienes pedidos registrados.</td></tr>
     @endforelse

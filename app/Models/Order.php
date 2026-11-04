@@ -10,7 +10,7 @@ use Illuminate\Support\Str;
 
 class Order extends Model
 {
-    public const STATUSES = ['pending' => 'Pendiente', 'pendiente' => 'Pendiente', 'confirmado' => 'Confirmado', 'preparando' => 'Preparando', 'enviado' => 'Enviado', 'entregado' => 'Entregado', 'cancelado' => 'Cancelado'];
+    public const STATUSES = ['pending' => 'Pendiente', 'pendiente' => 'Pendiente', 'confirmed' => 'Confirmado', 'confirmado' => 'Confirmado', 'preparando' => 'Preparando', 'enviado' => 'Enviado', 'entregado' => 'Entregado', 'cancelado' => 'Cancelado'];
 
     public const PAYMENT_STATUSES = ['pending' => 'Pendiente de pago', 'paid' => 'Pagado', 'rejected' => 'Rechazado', 'refunded' => 'Reembolsado', 'cancelled' => 'Cancelado', 'pendiente' => 'Pendiente de pago', 'pagado' => 'Pagado', 'rechazado' => 'Rechazado', 'reembolsado' => 'Reembolsado'];
 
@@ -25,7 +25,7 @@ class Order extends Model
 
     protected function casts(): array
     {
-        return ['user_id' => 'integer', 'subtotal' => 'decimal:2', 'shipping_cost' => 'decimal:2', 'discount_total' => 'decimal:2', 'total' => 'decimal:2'];
+        return ['user_id' => 'integer', 'custom_request_id' => 'integer', 'subtotal' => 'decimal:2', 'shipping_cost' => 'decimal:2', 'discount_total' => 'decimal:2', 'total' => 'decimal:2'];
     }
 
     protected static function booted(): void
@@ -40,6 +40,11 @@ class Order extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function customRequest(): BelongsTo
+    {
+        return $this->belongsTo(CustomRequest::class);
     }
 
     public function items(): HasMany

@@ -24,6 +24,11 @@ class User extends Authenticatable
         return $this->role === 'admin';
     }
 
+    public function customRequests(): HasMany
+    {
+        return $this->hasMany(CustomRequest::class);
+    }
+
     public function cart(): HasOne
     {
         return $this->hasOne(Cart::class);

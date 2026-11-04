@@ -48,7 +48,7 @@ class OrderController extends Controller
     {
         Gate::authorize('manage', $order);
 
-        return view('housekeeping.orders.show', ['order' => $order->load(['user', 'items'])]);
+        return view('housekeeping.orders.show', ['order' => $order->load(['user', 'items', 'customRequest'])]);
     }
 
     public function updateStatus(UpdateOrderStatusRequest $request, Order $order): RedirectResponse

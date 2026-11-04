@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Housekeeping\CategoryController;
 use App\Http\Controllers\Housekeeping\CustomerController;
+use App\Http\Controllers\Housekeeping\CustomRequestController;
 use App\Http\Controllers\Housekeeping\OrderController;
 use App\Http\Controllers\Housekeeping\ProductController;
 use App\Http\Controllers\HousekeepingController;
@@ -19,5 +20,8 @@ Route::middleware(['auth', 'admin'])->prefix('housekeeping')->name('housekeeping
     Route::resource('products', ProductController::class)->only(['index', 'create', 'store', 'edit', 'update']);
     Route::patch('/products/{product}/status', [ProductController::class, 'status'])->name('products.status');
     Route::delete('/products/{product}/images/{image}', [ProductController::class, 'destroyImage'])->scopeBindings()->name('products.images.destroy');
+    Route::get('/personalizados', [CustomRequestController::class, 'index'])->name('custom-requests.index');
+    Route::get('/personalizados/{customRequest}', [CustomRequestController::class, 'show'])->name('custom-requests.show');
+    Route::patch('/personalizados/{customRequest}', [CustomRequestController::class, 'update'])->name('custom-requests.update');
     Route::get('/{module}', [HousekeepingController::class, 'module'])->name('module');
 });

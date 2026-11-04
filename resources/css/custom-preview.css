@@ -1,0 +1,48 @@
+.cp-editor{margin:1.5rem 0;padding:1rem;border:1px solid #b5b5b566;border-radius:12px;max-width:680px}
+.cp-stage{position:relative;width:100%;aspect-ratio:1;background:#ecebea;border-radius:12px;overflow:hidden;margin:1rem auto;max-width:480px;isolation:isolate}
+.cp-shirt,.cp-mug-art{display:none;position:absolute;width:100%;height:100%;fill:#fafafa;stroke:#9d9d9d;stroke-width:2}
+.cp-shirt_white .cp-shirt,.cp-shirt_black .cp-shirt,.cp-mug .cp-mug-art{display:block}
+.cp-shirt_black .cp-shirt{fill:#25262b;stroke:#55565b}
+.cp-neck,.cp-seam{fill:none}
+.cp-area{position:absolute;left:50%;top:50%;width:72%;height:72%;transform:translate(-50%,-50%);overflow:hidden;border:1px dashed #7779;background:#fff;touch-action:none;cursor:grab}
+.cp-shirt_white .cp-area,.cp-shirt_black .cp-area{top:53%;width:36%;height:44%;background:transparent}
+.cp-mug .cp-area{left:44.5%;top:50%;width:48%;height:44%;background:transparent}
+.cp-badges .cp-area,.cp-shape-circular .cp-area{border-radius:50%;box-shadow:inset 0 0 0 5px #aaa5,0 5px 12px #0002}
+.cp-patch .cp-area{border:4px dashed #74716c}
+.cp-design{position:absolute;max-width:none!important;max-height:none!important;height:auto!important;display:block;user-select:none;pointer-events:none;margin:0!important;border-radius:0!important}
+.cp-face{position:absolute;bottom:2%;width:100%;text-align:center;font-size:.8rem;color:#444}
+.cp-controls{display:grid;gap:.75rem}
+.cp-controls label{display:grid;gap:.3rem}
+.cp-controls input[type=range]{width:100%;min-height:44px}
+.cp-buttons{display:flex;gap:.5rem;flex-wrap:wrap}
+.cp-buttons button{font:inherit;min-height:44px;padding:.5rem .85rem;border:1px solid #8888;border-radius:6px;background:#fff;color:#222;cursor:pointer}
+.cp-buttons button:focus-visible{outline:3px solid #b21f42}
+.cp-saved .cp-area{touch-action:auto;cursor:default}
+.cp-saved dl{display:grid;grid-template-columns:auto 1fr;gap:.4rem 1rem}
+.cp-saved dd{margin:0}
+.cp-editor p{font-size:.9rem;line-height:1.5}
+.cp-orientation-horizontal .cp-area{width:42%;height:24%;top:48%}
+.cp-panorama{position:relative;width:100%;aspect-ratio:3/1;margin:1rem 0;background:#fff;border-radius:4px}
+.cp-panorama .cp-area{inset:0;transform:none;width:100%;height:100%;box-sizing:border-box}
+.cp-panorama img.cp-design,.cp-cylinder-plane img.cp-design{height:var(--cp-design-height)!important;object-fit:fill}
+.cp-wrap-caption{text-align:center;color:#555}
+.cp-cylinder-stage{max-width:420px}
+.cp-cylinder-art{position:absolute;inset:0;width:100%;height:100%;fill:#fafafa;stroke:#999;stroke-width:2}
+.cp-handle-left .cp-cylinder-art{transform:scaleX(-1)}
+.cp-cylinder-print{position:absolute;left:16.25%;top:25.5%;width:56.75%;height:50%;overflow:hidden;border-radius:0 0 48% 48% / 0 0 7% 7%;background:#fff;pointer-events:none}
+.cp-handle-left .cp-cylinder-print{left:27%}
+.cp-cylinder-slice{position:absolute;top:0;height:100%;overflow:hidden}
+.cp-cylinder-plane{position:absolute;top:0;height:100%}
+.cp-cylinder-shading{position:absolute;inset:0;background:linear-gradient(90deg,#0004,transparent 27%,#fff2 48%,transparent 65%,#0005);pointer-events:none}
+.cp-controls select{min-height:44px;max-width:100%}
+.cp-controls output{font-size:.85rem;color:#555}
+.cp-assistance{margin:1.5rem 0;padding:1rem;border:1px solid #b7995c88;border-radius:12px;background:#faf6ed;color:#28231d}
+.cp-assistance h3 span{white-space:nowrap}
+.cp-assistance-check{display:flex!important;align-items:center;gap:.65rem;min-height:44px;cursor:pointer}
+.cp-assistance-check input[type=checkbox]{width:22px;min-width:22px;height:22px;margin:0;accent-color:#a22338}
+.cp-assistance-notes{white-space:pre-wrap;overflow-wrap:anywhere}
+.cp-assistance-dialog{width:min(620px,calc(100% - 2rem));max-height:85dvh;overflow:auto;padding:1.5rem;border:1px solid #b7995c88;border-radius:12px;color:#28231d;background:#fff}
+.cp-assistance-dialog::backdrop{background:#0009}
+.cp-assistance-dialog label{display:grid;gap:.5rem}
+.cp-assistance-dialog textarea{width:100%;box-sizing:border-box;min-height:130px;font:inherit}
+.cp-assistance-dialog .cp-buttons{margin-top:1rem}

@@ -52,7 +52,7 @@ class ShoppingCart
             }
             $product = Product::visible()->whereKey($id)->lockForUpdate()->firstOrFail();
             $current = (int) ($this->quantities($request)[$id] ?? 0);
-            abort_if(!$add && $current === 0, 404);
+            abort_if(! $add && $current === 0, 404);
             $desired = $add ? $current + $quantity : $quantity;
             if ($desired < 1 || $desired > $product->stock) {
                 throw ValidationException::withMessages(['quantity' => $product->stock === 0
@@ -95,7 +95,7 @@ class ShoppingCart
     public function merge(Request $request): void
     {
         $guest = $request->session()->get('cart', []);
-        if (!$guest) {
+        if (! $guest) {
             return;
         }
         DB::transaction(function () use ($request, $guest) {

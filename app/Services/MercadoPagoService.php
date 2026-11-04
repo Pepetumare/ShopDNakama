@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Order;
+use MercadoPago\Client\Common\RequestOptions;
 use MercadoPago\Client\Payment\PaymentClient;
 use MercadoPago\Client\Preference\PreferenceClient;
 use MercadoPago\MercadoPagoConfig;
@@ -38,9 +39,9 @@ class MercadoPagoService
         }
 
         $backUrls = [
-            'success' => $baseUrl . '/checkout/mercadopago/success',
-            'pending' => $baseUrl . '/checkout/mercadopago/pending',
-            'failure' => $baseUrl . '/checkout/mercadopago/failure',
+            'success' => $baseUrl.'/checkout/mercadopago/success',
+            'pending' => $baseUrl.'/checkout/mercadopago/pending',
+            'failure' => $baseUrl.'/checkout/mercadopago/failure',
         ];
         foreach (['success', 'pending', 'failure'] as $result) {
             if (empty($backUrls[$result])) {
@@ -50,9 +51,14 @@ class MercadoPagoService
 
         $this->configure();
         $items = $order->items->map(fn ($item) => [
-            'id' => (string) $item->product_id, 'title' => $item->product_name,
+            'id' => $order->custom_request_id && $item->product_id === null ? 'custom-'.$order->custom_request_id : (string) $item->product_id, 'title' => $item->product_name,
             'quantity' => $item->quantity, 'unit_price' => (float) $item->unit_price, 'currency_id' => 'CLP',
         ])->all();
+        $options = null;
+        if ($order->custom_request_id) {
+            $options = new RequestOptions;
+            $options->setCustomHeaders(['X-Idempotency-Key: custom-order-'.$order->number]);
+        }
         $preference = (new PreferenceClient)->create([
             'items' => $items,
             'payer' => ['name' => $order->customer_name, 'email' => $order->customer_email],
@@ -60,9 +66,17 @@ class MercadoPagoService
             'external_reference' => $order->number,
             'metadata' => ['order_id' => $order->id],
             'back_urls' => $backUrls,
-            'notification_url' => $baseUrl . '/webhooks/mercadopago',
+            'notification_url' => $baseUrl.'/webhooks/mercadopago',
             'auto_return' => 'approved',
-        ]);
+        ], $options);
+
+        return ['id' => $preference->id, 'url' => $preference->init_point];
+    }
+
+    public function getPreference(string $id): array
+    {
+        $this->configure();
+        $preference = (new PreferenceClient)->get($id);
 
         return ['id' => $preference->id, 'url' => $preference->init_point];
     }
@@ -74,6 +88,7 @@ class MercadoPagoService
 
         return ['id' => (string) $payment->id, 'status' => $payment->status,
             'external_reference' => $payment->external_reference,
-            'amount' => $payment->transaction_amount, 'currency' => $payment->currency_id];
+            'amount' => $payment->transaction_amount, 'currency' => $payment->currency_id,
+            'preference_id' => $payment->preference_id ?? null];
     }
 }

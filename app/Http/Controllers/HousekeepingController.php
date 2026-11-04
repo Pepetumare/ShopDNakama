@@ -12,7 +12,7 @@ class HousekeepingController extends Controller
 {
     public const MODULES = [
         'productos' => 'Productos', 'categorias' => 'Categorías', 'pedidos' => 'Pedidos',
-        'clientes' => 'Clientes', 'stock' => 'Stock', 'ofertas' => 'Ofertas',
+        'personalizados' => 'Personalizados', 'clientes' => 'Clientes', 'stock' => 'Stock', 'ofertas' => 'Ofertas',
         'configuracion' => 'Configuración',
     ];
 
@@ -31,6 +31,7 @@ class HousekeepingController extends Controller
     public static function moduleUrl(string $module): string
     {
         return match ($module) {
+            'personalizados' => route('housekeeping.custom-requests.index'),
             'productos' => route('housekeeping.products.index'),
             'categorias' => route('housekeeping.categories.index'),
             'pedidos' => route('housekeeping.orders.index'),

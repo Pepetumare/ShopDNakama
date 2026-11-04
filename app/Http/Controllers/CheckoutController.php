@@ -105,6 +105,7 @@ class CheckoutController extends Controller
                 'code' => $exception->getCode(),
                 'order_id' => $order->id ?? null,
             ]);
+
             return to_route('checkout')->withErrors(['payment' => 'No pudimos iniciar el pago. Tu pedido sigue pendiente; no se ha realizado ningún cobro.']);
         }
 

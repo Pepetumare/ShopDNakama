@@ -1,6 +1,7 @@
 @extends('housekeeping.layout', ['module' => 'pedidos'])
 @section('title', 'Pedido '.$order->number.' | Housekeeping')
 @section('content')
+@if($order->customRequest)<p><a class="hk-secondary" href="{{ route('housekeeping.custom-requests.show', $order->customRequest) }}">Ver solicitud personalizada {{ $order->customRequest->request_number }}</a></p>@endif
 <div class="hk-toolbar"><div class="hk-page-heading"><p>HOUSEKEEPING / PEDIDOS</p><h1>Pedido {{ $order->number }}</h1><span>{{ $order->created_at?->format('d/m/Y H:i') }}</span></div><a class="hk-secondary" href="{{ route('housekeeping.orders.index') }}">Volver a pedidos</a></div>
 <div class="hk-detail-grid">
     <section class="hk-panel hk-detail-panel"><h2>Cliente</h2><dl class="hk-detail-list"><div><dt>Nombre</dt><dd>{{ $order->customer_display_name }}</dd></div><div><dt>Correo</dt><dd>{{ $order->customer_display_email }}</dd></div><div><dt>Teléfono</dt><dd>{{ $order->customer_phone ?: 'No registrado' }}</dd></div></dl>@if($order->user)<a class="hk-secondary" href="{{ route('housekeeping.customers.show', $order->user) }}">Ver cliente</a>@endif</section>

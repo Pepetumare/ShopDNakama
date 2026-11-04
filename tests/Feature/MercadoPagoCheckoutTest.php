@@ -83,7 +83,7 @@ class MercadoPagoCheckoutTest extends StoreTestCase
         $this->notify($order)->assertOk();
         $order->refresh();
         $this->assertSame('paid', $order->payment_status);
-        $this->assertSame('confirmado', $order->status);
+        $this->assertSame('confirmed', $order->status);
         $this->assertSame('123', $order->mercadopago_payment_id);
         $this->assertNotNull($order->stock_deducted_at);
         $this->assertSame(6, $order->items->first()->product->stock);

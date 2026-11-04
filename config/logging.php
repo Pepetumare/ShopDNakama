@@ -51,6 +51,13 @@ return [
     */
 
     'channels' => [
+        'mercadopago_webhook' => [
+            'driver' => 'daily',
+            'path' => env('MERCADOPAGO_WEBHOOK_LOG', storage_path('logs/mercadopago-webhook.log')),
+            'level' => 'info',
+            'days' => 3,
+            'replace_placeholders' => false,
+        ],
 
         'stack' => [
             'driver' => 'stack',

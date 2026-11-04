@@ -6,8 +6,8 @@
     <div class="account-layout">
         <aside class="account-sidebar" aria-label="Menú de mi cuenta">
             <nav class="account-nav" aria-label="Mi cuenta">
-                @foreach(['account.index' => 'Resumen', 'account.data' => 'Mis datos', 'account.addresses' => 'Mis direcciones', 'account.orders.index' => 'Mis pedidos', 'account.favorites' => 'Favoritos'] as $route => $label)
-                    <a href="{{ route($route) }}" @if(request()->routeIs($route) || ($route === 'account.orders.index' && request()->routeIs('account.orders.*'))) aria-current="page" @endif>{{ $label }}</a>
+                @foreach(['account.index' => 'Resumen', 'account.data' => 'Mis datos', 'account.addresses' => 'Mis direcciones', 'account.orders.index' => 'Mis pedidos', 'account.custom-requests.index' => 'Mis personalizados', 'account.favorites' => 'Favoritos'] as $route => $label)
+                    <a href="{{ route($route) }}" @if(request()->routeIs($route) || ($route === 'account.custom-requests.index' && request()->routeIs('account.custom-requests.*')) || ($route === 'account.orders.index' && request()->routeIs('account.orders.*'))) aria-current="page" @endif>{{ $label }}</a>
                 @endforeach
                 <form method="post" action="{{ route('logout') }}">@csrf<button type="submit">Cerrar sesión</button></form>
             </nav>

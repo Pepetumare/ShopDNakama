@@ -12,7 +12,7 @@ class AccountOrderController extends Controller
     public function index(Request $request): View
     {
         return view('account.orders.index', [
-            'orders' => $request->user()->orders()->latest()->orderByDesc('id')->paginate(15),
+            'orders' => $request->user()->orders()->with('customRequest')->latest()->orderByDesc('id')->paginate(15),
         ]);
     }
 
@@ -20,6 +20,6 @@ class AccountOrderController extends Controller
     {
         Gate::authorize('view', $order);
 
-        return view('account.orders.show', ['order' => $order->load(['user', 'items'])]);
+        return view('account.orders.show', ['order' => $order->load(['user', 'items', 'customRequest'])]);
     }
 }

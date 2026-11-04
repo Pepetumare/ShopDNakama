@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\ShoppingCart;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
@@ -22,7 +23,7 @@ class AppServiceProvider extends ServiceProvider
     {
         View::composer('components.store.header', function ($view) {
             $view->with('favoriteCount', request()->user()?->favorites()->count() ?? 0);
-            $view->with('cartCount', app(\App\Services\ShoppingCart::class)->lines(request())->sum('quantity'));
+            $view->with('cartCount', app(ShoppingCart::class)->lines(request())->sum('quantity'));
         });
     }
 }
