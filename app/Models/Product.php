@@ -109,7 +109,7 @@ class Product extends Model
     public function getStockLabelAttribute(): string
     {
         return match (true) {
-            $this->stock > 5 => 'En stock',
+            $this->stock > ($this->minimum_stock ?? 5) => 'En stock',
             $this->stock > 0 => 'Últimas unidades',
             default => 'Agotado',
         };

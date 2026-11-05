@@ -5,10 +5,16 @@ use App\Http\Controllers\Housekeeping\CustomerController;
 use App\Http\Controllers\Housekeeping\CustomRequestController;
 use App\Http\Controllers\Housekeeping\OrderController;
 use App\Http\Controllers\Housekeeping\ProductController;
+use App\Http\Controllers\Housekeeping\StockController;
 use App\Http\Controllers\HousekeepingController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'admin'])->prefix('housekeeping')->name('housekeeping.')->group(function () {
+    Route::get('/stock', [StockController::class, 'index'])->name('stock.index');
+    Route::post('/stock/returns', [StockController::class, 'restore'])->name('stock.restore');
+    Route::get('/stock/{product}', [StockController::class, 'show'])->name('stock.show');
+    Route::post('/stock/{product}/movements', [StockController::class, 'store'])->name('stock.store');
+    Route::patch('/stock/{product}/minimum', [StockController::class, 'minimum'])->name('stock.minimum');
     Route::get('/', [HousekeepingController::class, 'index'])->name('dashboard');
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
     Route::get('/orders/{order}', [OrderController::class, 'show'])->name('orders.show');

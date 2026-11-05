@@ -126,7 +126,7 @@ class HousekeepingCatalogTest extends StoreTestCase
         $this->get(route('housekeeping.products.edit', $product))->assertOk()->assertSee('Imagen principal');
     }
 
-    public function test_product_updates_stock_prices_and_all_flags_without_removing_existing_images(): void
+    public function test_product_preserves_stock_and_updates_prices_and_flags_without_removing_existing_images(): void
     {
         $product = $this->product(['name' => 'Figura original', 'sku' => 'SAM-001']);
         $image = $product->images()->create(['image' => 'products/existing.png', 'is_primary' => true]);
@@ -134,12 +134,12 @@ class HousekeepingCatalogTest extends StoreTestCase
             'name' => 'Figura editada', 'slug' => $product->slug, 'sale_price' => null, 'stock' => 0,
             'is_new' => 0, 'is_customizable' => 0, 'is_featured' => 0,
         ]))->assertSessionHasNoErrors();
-        $this->assertSame(0, $product->fresh()->stock);
+        $this->assertSame(8, $product->fresh()->stock);
         $this->assertNull($product->fresh()->sale_price);
         $this->assertFalse($product->fresh()->is_new || $product->fresh()->is_customizable || $product->fresh()->is_featured);
         $this->assertTrue($image->fresh()->is_primary);
         $this->get('/')->assertOk()->assertDontSee('Figura editada');
-        $this->get('/catalogo')->assertOk()->assertSee('Figura editada')->assertSee('Agotado');
+        $this->get('/catalogo')->assertOk()->assertSee('Figura editada')->assertSee('En stock');
         $this->patch(route('housekeeping.products.status', $product), ['is_active' => 0])->assertSessionHasNoErrors();
         $this->get('/catalogo')->assertOk()->assertDontSee('Figura editada');
         $this->get(route('producto.show', $product))->assertNotFound();

@@ -36,7 +36,7 @@ class ProductRequest extends FormRequest
             'product_type' => ['nullable', 'string', 'max:255'],
             'price' => ['required', 'numeric', 'decimal:0,2', 'min:0', 'max:9999999999.99'],
             'sale_price' => ['nullable', 'numeric', 'decimal:0,2', 'min:0', 'lt:price'],
-            'stock' => ['required', 'integer', 'min:0', 'max:2147483647'],
+            'stock' => [$product ? 'exclude' : 'required', 'integer', 'min:0', 'max:2147483647'],
             'is_active' => ['required', 'boolean'],
             'is_featured' => ['required', 'boolean'],
             'is_new' => ['required', 'boolean'],

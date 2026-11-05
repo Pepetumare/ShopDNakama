@@ -11,5 +11,15 @@
     <section class="hk-panel hk-detail-panel"><h2>Estado del pedido</h2><form method="post" action="{{ route('housekeeping.orders.status', $order) }}" class="hk-status-form">@csrf @method('PATCH')<div class="hk-field"><label for="order-status">Estado</label><select id="order-status" name="status" required>@foreach(\App\Models\Order::STATUSES as $value => $label)<option value="{{ $value }}" @selected(old('status', $order->status) === $value)>{{ $label }}</option>@endforeach</select></div><button type="submit" class="hk-button">Guardar estado</button></form><p class="hk-help">Este cambio actualiza el seguimiento del pedido. No modifica pagos ni stock automáticamente.</p></section>
 </div>
 <x-orders.payment-reference :order="$order"/>
+@if($order->stock_restored_at)
+<p class="hk-notice">Los productos físicos de este pedido ya fueron repuestos al inventario.</p>
+@elseif($order->stock_deducted_at && in_array($order->payment_status, ['refunded', 'reembolsado']))
+<form class="hk-panel hk-form hk-status-form hk-stock-heading" method="post" action="{{ route('housekeeping.stock.restore') }}" @submit="if (!window.confirm('¿Confirmas que recibiste todos los productos físicos en condiciones de venta?')) $event.preventDefault()">
+@csrf
+<h2>Devolución al inventario</h2><input type="hidden" name="order_number" value="{{ $order->number }}">
+<p>El reembolso no repone stock automáticamente. Registra la devolución cuando hayas recibido y revisado todos los productos físicos.</p>
+<div class="hk-field"><label for="return-reason">Motivo de la devolución</label><textarea id="return-reason" name="reason" minlength="5" maxlength="1000" required>{{ old('reason') }}</textarea></div>
+<label class="hk-checkbox"><input type="checkbox" name="received" value="1" required> Recibí todos los productos físicos y están aptos para venta.</label><button class="hk-button">Confirmar recepción y reponer stock</button></form>
+@endif
 @if($order->fulfillment_issue)<p role="alert" class="hk-panel">{{ $order->fulfillment_issue }}</p>@endif
 @endsection

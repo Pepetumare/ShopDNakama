@@ -23,7 +23,7 @@ class HousekeepingController extends Controller
             'stats' => [
                 'Productos' => Product::count(), 'Categorías' => Category::count(),
                 'Usuarios registrados' => User::count(),
-                'Productos con stock bajo' => Product::where('is_active', true)->whereBetween('stock', [1, 5])->count(),
+                'Productos con stock bajo' => Product::where('is_active', true)->where('stock', '>', 0)->whereColumn('stock', '<=', 'minimum_stock')->count(),
             ],
         ]);
     }
@@ -31,6 +31,7 @@ class HousekeepingController extends Controller
     public static function moduleUrl(string $module): string
     {
         return match ($module) {
+            'stock' => route('housekeeping.stock.index'),
             'personalizados' => route('housekeeping.custom-requests.index'),
             'productos' => route('housekeeping.products.index'),
             'categorias' => route('housekeeping.categories.index'),

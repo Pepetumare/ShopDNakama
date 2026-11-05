@@ -60,6 +60,8 @@ class MercadoPagoWebhookProcessingTest extends StoreTestCase
         $this->assertSame('paid', $order->payment_status);
         $this->assertSame('confirmed', $order->status);
         $this->assertSame(7, $order->items->first()->product->stock);
+        $this->assertDatabaseCount('stock_movements', 1);
+        $this->assertDatabaseHas('stock_movements', ['order_id' => $order->id, 'type' => 'sale', 'quantity' => -1, 'before' => 8, 'after' => 7, 'user_id' => null]);
     }
 
     public function test_php_normalized_and_literal_query_keys_are_distinct_from_nested_body_input(): void

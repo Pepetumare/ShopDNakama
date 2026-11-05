@@ -7,6 +7,7 @@ use App\Models\ProductImage;
 use App\Support\CatalogMedia;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Throwable;
 
 class ProductEditor
@@ -24,8 +25,17 @@ class ProductEditor
             return DB::transaction(function () use ($product, $data, $paths) {
                 if ($product->exists) {
                     $product = Product::whereKey($product->id)->lockForUpdate()->firstOrFail();
+                    unset($data['stock']);
+                }
+                $initialStock = $product->exists ? 0 : (int) ($data['stock'] ?? 0);
+                if (! $product->exists) {
+                    $data['stock'] = 0;
                 }
                 $product->fill(Arr::except($data, ['uploads', 'images_meta', 'primary_image_id']))->save();
+                if ($initialStock > 0) {
+                    app(StockManager::class)->move($product, ['type' => 'receipt', 'quantity' => $initialStock, 'reason' => 'Stock inicial al crear producto', 'version' => 0, 'token' => (string) Str::uuid()], auth()->id());
+                    $product->refresh();
+                }
                 foreach ($data['images_meta'] ?? [] as $image) {
                     $product->images()->whereKey($image['id'])->update(Arr::only($image, ['sort_order', 'alt_text']));
                 }

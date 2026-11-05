@@ -71,6 +71,26 @@ class CustomQuotePaymentTest extends StoreTestCase
         }
     }
 
+    public function test_custom_manufacturing_does_not_create_physical_stock_movements(): void
+    {
+        $order = $this->accept($this->quote());
+        $this->notify($order)->assertOk();
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertNull($order->fresh()->stock_deducted_at);
+    }
+
+    public function test_custom_order_linked_to_existing_product_deducts_and_audits_once(): void
+    {
+        $product = $this->product(['stock' => 8]);
+        $order = $this->accept($this->quote());
+        $order->items()->first()->update(['product_id' => $product->id, 'quantity' => 3]);
+        $this->notify($order)->assertOk();
+        $this->notify($order)->assertOk();
+        $this->assertSame(5, $product->fresh()->stock);
+        $this->assertDatabaseCount('stock_movements', 1);
+        $this->assertDatabaseHas('stock_movements', ['type' => 'sale', 'order_id' => $order->id, 'quantity' => -3]);
+    }
+
     public function test_guests_other_users_and_admins_cannot_consent_for_owner(): void
     {
         $quote = $this->quote();

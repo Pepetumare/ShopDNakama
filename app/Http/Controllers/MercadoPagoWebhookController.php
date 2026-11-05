@@ -4,8 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\CustomRequest;
 use App\Models\Order;
-use App\Models\Product;
 use App\Services\MercadoPagoService;
+use App\Services\StockManager;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -95,10 +95,12 @@ class MercadoPagoWebhookController extends Controller
                 if ($order->payment_status === 'refunded' || ($order->payment_status === 'paid' && ! in_array($status, ['paid', 'refunded']))) {
                     return $before + ['payment_status_after' => $order->payment_status, 'order_status_after' => $order->status, 'result' => 'terminal_status_preserved'];
                 }
-                if ($customRequest && $order->payment_status === $status && $order->mercadopago_payment_id === $id) {
+                if ($customRequest && $order->payment_status === $status && $order->mercadopago_payment_id === $id
+                    && ($order->stock_deducted_at || ! $order->items()->whereNotNull('product_id')->exists())) {
                     return $before + ['payment_status_after' => $order->payment_status, 'order_status_after' => $order->status, 'result' => 'duplicate_ignored'];
                 }
                 $order->forceFill(['mercadopago_payment_id' => $id, 'payment_status' => $status]);
+                $stockAvailable = $status !== 'paid' || ((! $customRequest || in_array($customRequest->status, ['quoted', 'approved', 'in_production', 'ready', 'completed'], true)) && app(StockManager::class)->deductOrder($order));
                 if ($customRequest && $status === 'paid') {
                     if ($customRequest->status === 'quoted' && $order->status !== 'cancelado') {
                         $customRequest->update(['status' => 'approved']);
@@ -113,21 +115,18 @@ class MercadoPagoWebhookController extends Controller
                     }
                 } elseif ($customRequest && $status === 'refunded') {
                     $order->fulfillment_issue = 'Pago personalizado reembolsado: revisar la producción antes de continuar.';
-                } elseif (! $customRequest && $status === 'paid' && ! $order->stock_deducted_at) {
-                    $items = $order->items;
-                    $products = Product::whereKey($items->pluck('product_id'))->orderBy('id')->lockForUpdate()->get()->keyBy('id');
-                    $available = $items->isNotEmpty() && $items->every(fn ($item) => $products->has($item->product_id) && $products[$item->product_id]->stock >= $item->quantity);
-                    if ($available && $order->status !== 'cancelado') {
-                        foreach ($items as $item) {
-                            $products[$item->product_id]->decrement('stock', $item->quantity);
-                        }
-                        $order->forceFill(['stock_deducted_at' => now(), 'fulfillment_issue' => null]);
+                } elseif (! $customRequest && $status === 'paid') {
+                    if ($stockAvailable && $order->status !== 'cancelado') {
+                        $order->fulfillment_issue = null;
                         if (in_array($order->status, ['pending', 'pendiente'])) {
                             $order->status = 'confirmed';
                         }
                     } else {
                         $order->fulfillment_issue = 'Pago confirmado: revisar stock o pedido cancelado antes de preparar o reembolsar.';
                     }
+                }
+                if ($status === 'paid' && ! $stockAvailable) {
+                    $order->fulfillment_issue = 'Pago confirmado: revisar stock o pedido cancelado antes de preparar o reembolsar.';
                 }
                 $order->save();
 
