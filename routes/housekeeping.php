@@ -4,6 +4,7 @@ use App\Http\Controllers\Housekeeping\CategoryController;
 use App\Http\Controllers\Housekeeping\CustomerController;
 use App\Http\Controllers\Housekeeping\CustomRequestController;
 use App\Http\Controllers\Housekeeping\OrderController;
+use App\Http\Controllers\Housekeeping\PaymentReconciliationController;
 use App\Http\Controllers\Housekeeping\ProductController;
 use App\Http\Controllers\Housekeeping\StockController;
 use App\Http\Controllers\HousekeepingController;
@@ -16,6 +17,10 @@ Route::middleware(['auth', 'admin'])->prefix('housekeeping')->name('housekeeping
     Route::post('/stock/{product}/movements', [StockController::class, 'store'])->name('stock.store');
     Route::patch('/stock/{product}/minimum', [StockController::class, 'minimum'])->name('stock.minimum');
     Route::get('/', [HousekeepingController::class, 'index'])->name('dashboard');
+    Route::get('/payments', [PaymentReconciliationController::class, 'index'])->name('payments.index');
+    Route::get('/orders/{order}/payments', [PaymentReconciliationController::class, 'show'])->name('payments.show');
+    Route::post('/orders/{order}/payments/review', [PaymentReconciliationController::class, 'review'])->middleware('throttle:10,1')->name('payments.review');
+    Route::post('/payments/{payment}/observations', [PaymentReconciliationController::class, 'annotate'])->name('payments.annotate');
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
     Route::get('/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
     Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.status');

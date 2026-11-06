@@ -42,6 +42,11 @@ class Order extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function paymentTransactions(): HasMany
+    {
+        return $this->hasMany(PaymentTransaction::class);
+    }
+
     public function customRequest(): BelongsTo
     {
         return $this->belongsTo(CustomRequest::class);

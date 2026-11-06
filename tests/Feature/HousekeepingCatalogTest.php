@@ -61,10 +61,10 @@ class HousekeepingCatalogTest extends StoreTestCase
     {
         $this->get('/housekeeping/categories/create')->assertOk();
         $this->post('/housekeeping/categories', [
-            'name' => 'Cultura Japonesa', 'description' => 'Descripción de categoría',
+            'name' => 'Cultura Geek', 'description' => 'Descripción de categoría',
             'is_active' => 1, 'sort_order' => 2, 'image' => UploadedFile::fake()->image('categoria.png'),
         ])->assertSessionHasNoErrors();
-        $category = Category::where('slug', 'cultura-japonesa')->firstOrFail();
+        $category = Category::where('slug', 'cultura-geek')->firstOrFail();
         Storage::disk('public')->assertExists($category->image);
         $this->get(route('housekeeping.categories.edit', $category))->assertOk()->assertSee('Descripción de categoría');
         $this->put(route('housekeeping.categories.update', $category), [

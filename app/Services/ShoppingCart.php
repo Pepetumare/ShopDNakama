@@ -65,9 +65,14 @@ class ShoppingCart
 
     public function remove(Request $request, int $id): void
     {
-        // The product ID is always resolved within the current owner's cart.
-        abort_unless(array_key_exists($id, $this->quantities($request)), 404);
-        $this->save($request, $id, 0);
+        DB::transaction(function () use ($request, $id) {
+            if ($request->user()) {
+                $request->user()->newQuery()->whereKey($request->user()->id)->lockForUpdate()->firstOrFail();
+            }
+            // The product ID is always resolved within the current owner's cart.
+            abort_unless(array_key_exists($id, $this->quantities($request)), 404);
+            $this->save($request, $id, 0);
+        }, 3);
     }
 
     public function lines(Request $request): Collection

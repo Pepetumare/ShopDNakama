@@ -20,7 +20,10 @@ class StockConcurrencyTest extends TestCase
         touch($database);
         $workers = [];
         try {
-            $command = [PHP_BINARY, '-d', 'extension=pdo_sqlite', '-d', 'extension=sqlite3'];
+            $command = [PHP_BINARY];
+            if (! extension_loaded('pdo_sqlite')) {
+                array_push($command, '-d', 'extension=pdo_sqlite');
+            }
             // Only the newly created temporary database is migrated.
             $migration = new Process([...$command, 'artisan', 'migrate', '--force', '--no-interaction'], base_path(), ['APP_ENV' => 'testing', 'DB_CONNECTION' => 'sqlite', 'DB_DATABASE' => $database, 'DB_URL' => '']);
             $migration->mustRun();

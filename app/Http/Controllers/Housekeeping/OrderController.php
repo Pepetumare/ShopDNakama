@@ -54,7 +54,17 @@ class OrderController extends Controller
     public function updateStatus(UpdateOrderStatusRequest $request, Order $order): RedirectResponse
     {
         Gate::authorize('manage', $order);
-        $order->update($request->safe()->only('status'));
+        \Illuminate\Support\Facades\DB::transaction(function () use ($request, $order) {
+            $locked = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
+            $status = $request->validated('status');
+            if (in_array($status, ['confirmed', 'confirmado', 'preparando', 'enviado', 'entregado'], true)
+                && ! $locked->stock_deducted_at && app(\App\Services\StockReservations::class)->rows($locked)->isNotEmpty()) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'status' => 'El pedido necesita un pago confirmado con stock asignado antes de avanzar.',
+                ]);
+            }
+            $locked->update(['status' => $status]);
+        }, 3);
 
         return to_route('housekeeping.orders.show', $order)->with('status', 'Estado del pedido actualizado correctamente.');
     }

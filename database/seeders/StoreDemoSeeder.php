@@ -15,7 +15,7 @@ class StoreDemoSeeder extends Seeder
     {
         DB::transaction(function () {
             $categories = [];
-            foreach (['manga' => 'Manga', 'figuras' => 'Figuras', 'billeteras' => 'Billeteras', 'merch' => 'Merchandising', 'cultura-japonesa' => 'Cultura Japonesa', 'estampados' => 'Estampados', 'impresion-3d' => 'Impresión 3D'] as $slug => $name) {
+            foreach (['manga' => 'Manga', 'figuras' => 'Figuras', 'billeteras' => 'Billeteras', 'merch' => 'Merchandising', 'cultura-japonesa' => 'Cultura Geek', 'estampados' => 'Estampados', 'impresion-3d' => 'Impresión 3D'] as $slug => $name) {
                 $categories[$slug] = Category::firstOrCreate(['slug' => $slug], ['name' => $name, 'sort_order' => count($categories)]);
             }
             $items = [
@@ -35,7 +35,7 @@ class StoreDemoSeeder extends Seeder
             foreach ($items as [$slug, $name, $category, $price, $salePrice, $stock]) {
                 Product::firstOrCreate(['slug' => $slug], [
                     'name' => $name, 'category_id' => $categories[$category]->id,
-                    'short_description' => 'Diseño inspirado en el anime y la cultura japonesa. Para verdaderos nakamas.',
+                    'short_description' => 'Diseño inspirado en el anime y la cultura geek. Para verdaderos nakamas.',
                     'description' => $name.'. Producto de demostración para desarrollo de Shop D. Nakama.',
                     'price' => $price, 'sale_price' => $salePrice, 'stock' => $stock,
                     'is_featured' => true, 'is_new' => $salePrice === null,

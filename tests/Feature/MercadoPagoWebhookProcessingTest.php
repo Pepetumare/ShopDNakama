@@ -49,7 +49,7 @@ class MercadoPagoWebhookProcessingTest extends StoreTestCase
     public function test_legitimate_query_only_notification_is_processed_without_a_body_data_id(): void
     {
         $order = $this->order();
-        $this->mock(MercadoPagoService::class)->shouldReceive('getPayment')->with('123')->times(4)->andReturn([
+        $this->mock(MercadoPagoService::class)->shouldReceive('getPayment')->with('123')->twice()->andReturn([
             'id' => '123', 'external_reference' => $order->number, 'amount' => 10000, 'currency' => 'CLP', 'status' => 'approved',
         ]);
         for ($attempt = 0; $attempt < 2; $attempt++) {
@@ -81,7 +81,7 @@ class MercadoPagoWebhookProcessingTest extends StoreTestCase
     public function test_query_id_and_type_override_body_and_only_api_payment_status_is_trusted(): void
     {
         $order = $this->order();
-        $this->mock(MercadoPagoService::class)->shouldReceive('getPayment')->with('123')->twice()->andReturn([
+        $this->mock(MercadoPagoService::class)->shouldReceive('getPayment')->with('123')->once()->andReturn([
             'id' => '123', 'external_reference' => $order->number, 'amount' => 10000, 'currency' => 'CLP', 'status' => 'rejected',
         ]);
         $this->postJson('/webhooks/mercadopago?data.id=123&type=payment', ['type' => 'merchant_order', 'data' => ['id' => '999'], 'status' => 'approved', 'external_reference' => 'forged', 'transaction_amount' => 1], $this->signature())->assertOk();
@@ -117,7 +117,7 @@ class MercadoPagoWebhookProcessingTest extends StoreTestCase
     public function test_logs_trace_committed_updates_and_report_query_and_body_id_separately(): void
     {
         $order = $this->order();
-        $this->mock(MercadoPagoService::class)->shouldReceive('getPayment')->with('123')->twice()->andReturn([
+        $this->mock(MercadoPagoService::class)->shouldReceive('getPayment')->with('123')->once()->andReturn([
             'id' => '123', 'external_reference' => $order->number, 'preference_id' => 'processing-pref', 'amount' => 10000, 'currency' => 'CLP', 'status' => 'approved',
         ]);
         $this->postJson('/webhooks/mercadopago?data.id=123&type=payment', ['data' => ['id' => '999']], $this->signature())->assertOk();
@@ -142,7 +142,7 @@ class MercadoPagoWebhookProcessingTest extends StoreTestCase
     public function test_pending_payment_stays_pending_without_deducting_stock(): void
     {
         $order = $this->order();
-        $this->mock(MercadoPagoService::class)->shouldReceive('getPayment')->with('123')->twice()->andReturn([
+        $this->mock(MercadoPagoService::class)->shouldReceive('getPayment')->with('123')->once()->andReturn([
             'id' => '123', 'external_reference' => $order->number, 'amount' => 10000, 'currency' => 'CLP', 'status' => 'pending',
         ]);
         $this->postJson('/webhooks/mercadopago?data.id=123&type=payment', [], $this->signature())->assertOk();
@@ -183,7 +183,7 @@ class MercadoPagoWebhookProcessingTest extends StoreTestCase
     public function test_api_preference_when_available_must_match_the_stored_preference(): void
     {
         $order = $this->order();
-        $this->mock(MercadoPagoService::class)->shouldReceive('getPayment')->with('123')->twice()->andReturn([
+        $this->mock(MercadoPagoService::class)->shouldReceive('getPayment')->with('123')->once()->andReturn([
             'id' => '123', 'external_reference' => $order->number, 'preference_id' => 'different-pref', 'amount' => 10000, 'currency' => 'CLP', 'status' => 'approved',
         ]);
         $this->postJson('/webhooks/mercadopago?data.id=123&type=payment', [], $this->signature())->assertStatus(422);

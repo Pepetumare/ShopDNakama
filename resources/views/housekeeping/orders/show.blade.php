@@ -11,6 +11,7 @@
     <section class="hk-panel hk-detail-panel"><h2>Estado del pedido</h2><form method="post" action="{{ route('housekeeping.orders.status', $order) }}" class="hk-status-form">@csrf @method('PATCH')<div class="hk-field"><label for="order-status">Estado</label><select id="order-status" name="status" required>@foreach(\App\Models\Order::STATUSES as $value => $label)<option value="{{ $value }}" @selected(old('status', $order->status) === $value)>{{ $label }}</option>@endforeach</select></div><button type="submit" class="hk-button">Guardar estado</button></form><p class="hk-help">Este cambio actualiza el seguimiento del pedido. No modifica pagos ni stock automáticamente.</p></section>
 </div>
 <x-orders.payment-reference :order="$order"/>
+@if($order->payment_method === 'mercadopago')<p><a class="hk-secondary" href="{{ route('housekeeping.payments.show', $order) }}">Ver conciliación de pagos</a></p>@endif
 @if($order->stock_restored_at)
 <p class="hk-notice">Los productos físicos de este pedido ya fueron repuestos al inventario.</p>
 @elseif($order->stock_deducted_at && in_array($order->payment_status, ['refunded', 'reembolsado']))

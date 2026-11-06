@@ -10,6 +10,8 @@ use Illuminate\Validation\ValidationException;
 
 class StockManager
 {
+    public function __construct(private StockReservations $reservations) {}
+
     public function move(Product $product, array $data, int $userId): void
     {
         DB::transaction(function () use ($product, $data, $userId) {
@@ -29,6 +31,9 @@ class StockManager
                 'issue', 'damage' => $locked->stock - (int) $data['quantity'],
                 default => $locked->stock + (int) $data['quantity'],
             };
+            if ($after < $this->reservations->held($locked, lock: true)) {
+                throw ValidationException::withMessages(['quantity' => 'El movimiento dejaría sin stock a reservas pendientes.']);
+            }
             $this->record($locked, $after, $data['type'], $data['reason'], $key, $userId);
         }, 3);
     }
@@ -48,8 +53,20 @@ class StockManager
             return false;
         }
         $products = Product::whereKey($physical->keys())->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+        $reservations = $this->reservations->rows($order, lock: true);
+        if ($reservations->isNotEmpty() && $reservations->count() !== $physical->count()) {
+            return false;
+        }
         foreach ($physical as $id => $lines) {
-            if (! $products->has($id) || $lines->contains(fn ($line) => $line->quantity < 1) || $products[$id]->stock < $lines->sum('quantity')) {
+            $quantity = $lines->sum('quantity');
+            if (! $products->has($id) || $lines->contains(fn ($line) => $line->quantity < 1) || $products[$id]->stock < $quantity) {
+                return false;
+            }
+            if ($reservations->isEmpty() && $this->reservations->available($products[$id], lock: true) < $quantity) {
+                return false;
+            }
+            if ($reservations->isNotEmpty() && (! $reservations->has($id)
+                || ! $this->reservations->isCurrent($reservations[$id]) || (int) $reservations[$id]->quantity !== $quantity)) {
                 return false;
             }
         }
@@ -58,6 +75,9 @@ class StockManager
         }
         if ($physical->isNotEmpty()) {
             $order->stock_deducted_at = now();
+            if ($reservations->isNotEmpty()) {
+                $this->reservations->consume($order);
+            }
         }
 
         return true;

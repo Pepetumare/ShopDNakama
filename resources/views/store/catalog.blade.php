@@ -6,8 +6,8 @@
     <div class="shop-container catalog-intro">
         <p class="eyebrow">SHOP D. NAKAMA · 仲間</p>
         <h1>CATÁLOGO</h1>
-        <h2>Anime, cultura japonesa y mucho más</h2>
-        <p>Descubre productos para verdaderos nakamas: manga, figuras, billeteras, merchandising, accesorios y cultura japonesa.</p>
+        <h2>Anime, cultura geek y mucho más</h2>
+        <p>Descubre productos para verdaderos nakamas: manga, figuras, billeteras, merchandising, accesorios y cultura geek.</p>
     </div>
 </section>
 <section class="shop-container catalog-section" id="productos" x-data="{ filtersOpen: false }" @keydown.escape.window="if (filtersOpen) { filtersOpen = false; $refs.filterToggle.focus() }">

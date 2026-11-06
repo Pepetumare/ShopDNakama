@@ -105,7 +105,7 @@ class MercadoPagoWebhookEndpointTest extends StoreTestCase
     public function test_valid_signed_public_post_processes_payment_once_with_real_csrf_middleware(): void
     {
         $order = $this->order();
-        $this->mock(MercadoPagoService::class)->shouldReceive('getPayment')->with('123')->times(4)->andReturn([
+        $this->mock(MercadoPagoService::class)->shouldReceive('getPayment')->with('123')->twice()->andReturn([
             'id' => '123', 'external_reference' => $order->number, 'amount' => 10000, 'currency' => 'CLP', 'status' => 'approved',
         ]);
         $this->assertGuest();

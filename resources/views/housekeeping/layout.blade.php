@@ -17,6 +17,7 @@
         <nav aria-label="Administración">
             <a href="{{ route('housekeeping.dashboard') }}" @if(request()->routeIs('housekeeping.dashboard')) aria-current="page" @endif>Resumen</a>
             @foreach($modules as $slug => $label)<a href="{{ \App\Http\Controllers\HousekeepingController::moduleUrl($slug) }}" @if(($module ?? '') === $slug) aria-current="page" @endif>{{ $label }}</a>@endforeach
+            <a href="{{ route('housekeeping.payments.index') }}" @if(request()->routeIs('housekeeping.payments.*')) aria-current="page" @endif>Conciliación de pagos</a>
         </nav>
         <div class="hk-sidebar-bottom"><a href="{{ route('account.index') }}">← Volver a mi cuenta</a><a href="{{ route('home') }}">Ver tienda</a><form method="post" action="{{ route('logout') }}">@csrf<button type="submit">Cerrar sesión</button></form></div>
     </aside>

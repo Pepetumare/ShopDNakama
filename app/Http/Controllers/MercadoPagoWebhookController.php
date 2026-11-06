@@ -2,12 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\CustomRequest;
-use App\Models\Order;
-use App\Services\MercadoPagoService;
-use App\Services\StockManager;
+use App\Services\PaymentReconciliation;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use MercadoPago\Exceptions\InvalidWebhookSignatureException;
@@ -17,7 +13,7 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 class MercadoPagoWebhookController extends Controller
 {
-    public function __invoke(Request $request, MercadoPagoService $mercadoPago)
+    public function __invoke(Request $request, PaymentReconciliation $reconciliation)
     {
         $query = $request->query();
         $body = $request->isJson() ? $request->json()->all() : $request->request->all();
@@ -57,82 +53,13 @@ class MercadoPagoWebhookController extends Controller
         $this->trace('webhook_signature', $context + ['signature_valid' => true]);
         // Failures return 5xx so Mercado Pago retries. No notification body is trusted.
         try {
-            $updated = DB::transaction(function () use ($id, $mercadoPago, $context) {
-                // Consult inside the lock to avoid applying stale, out-of-order snapshots.
-                $payment = $mercadoPago->getPayment($id);
-                $this->paymentTrace($payment, $context);
-                $candidate = Order::where('number', $payment['external_reference'] ?? '')->first();
-                $customRequest = $candidate?->custom_request_id
-                    ? CustomRequest::whereKey($candidate->custom_request_id)->lockForUpdate()->firstOrFail() : null;
-                $order = $candidate ? Order::whereKey($candidate->id)->lockForUpdate()->first() : null;
-                $this->trace('webhook_order_located', $context + ['order_id' => $order?->id, 'stored_preference_id' => $order?->mercadopago_preference_id]);
-                if (! $order) {
-                    $this->trace('webhook_failed', $context + ['reason' => 'external_reference_order_not_found']);
-                }
-                abort_unless($order && $order->payment_method === 'mercadopago' && $order->mercadopago_preference_id, 422);
-                // Re-fetch after acquiring the lock in case another notification was processing.
-                $payment = $mercadoPago->getPayment($id);
-                $this->paymentTrace($payment, $context + ['order_id' => $order->id]);
-                $before = ['order_id' => $order->id, 'payment_status_before' => $order->payment_status, 'order_status_before' => $order->status];
-                $valid = (string) ($payment['id'] ?? '') === $id && ($payment['external_reference'] ?? null) === $order->number
-                    && ($payment['currency'] ?? null) === 'CLP'
-                    && is_numeric($payment['amount'] ?? null)
-                    && (int) round((float) $payment['amount'] * 100) === (int) round((float) $order->total * 100)
-                    && (empty($payment['preference_id']) || $payment['preference_id'] === $order->mercadopago_preference_id);
-                if (! $valid) {
-                    $this->trace('webhook_failed', $context + $before + ['reason' => 'payment_identity_amount_currency_or_preference_mismatch']);
-                }
-                abort_unless($valid, 422);
-                // Once a successful payment is associated, another attempt cannot replace it.
-                if ($order->mercadopago_payment_id && $order->mercadopago_payment_id !== $id
-                    && in_array($order->payment_status, ['paid', 'refunded'])) {
-                    return $before + ['payment_status_after' => $order->payment_status, 'order_status_after' => $order->status, 'result' => 'different_payment_ignored'];
-                }
-                $status = match ($payment['status']) {
-                    'approved' => 'paid', 'rejected' => 'rejected', 'refunded', 'charged_back' => 'refunded',
-                    'cancelled' => 'cancelled', default => 'pending',
-                };
-                if ($order->payment_status === 'refunded' || ($order->payment_status === 'paid' && ! in_array($status, ['paid', 'refunded']))) {
-                    return $before + ['payment_status_after' => $order->payment_status, 'order_status_after' => $order->status, 'result' => 'terminal_status_preserved'];
-                }
-                if ($customRequest && $order->payment_status === $status && $order->mercadopago_payment_id === $id
-                    && ($order->stock_deducted_at || ! $order->items()->whereNotNull('product_id')->exists())) {
-                    return $before + ['payment_status_after' => $order->payment_status, 'order_status_after' => $order->status, 'result' => 'duplicate_ignored'];
-                }
-                $order->forceFill(['mercadopago_payment_id' => $id, 'payment_status' => $status]);
-                $stockAvailable = $status !== 'paid' || ((! $customRequest || in_array($customRequest->status, ['quoted', 'approved', 'in_production', 'ready', 'completed'], true)) && app(StockManager::class)->deductOrder($order));
-                if ($customRequest && $status === 'paid') {
-                    if ($customRequest->status === 'quoted' && $order->status !== 'cancelado') {
-                        $customRequest->update(['status' => 'approved']);
-                    }
-                    if (in_array($customRequest->status, ['approved', 'in_production', 'ready', 'completed'], true) && $order->status !== 'cancelado') {
-                        if (in_array($order->status, ['pending', 'pendiente'], true)) {
-                            $order->status = 'confirmed';
-                        }
-                        $order->fulfillment_issue = null;
-                    } else {
-                        $order->fulfillment_issue = 'Pago confirmado para una solicitud cancelada o rechazada: revisar antes de producir o reembolsar.';
-                    }
-                } elseif ($customRequest && $status === 'refunded') {
-                    $order->fulfillment_issue = 'Pago personalizado reembolsado: revisar la producción antes de continuar.';
-                } elseif (! $customRequest && $status === 'paid') {
-                    if ($stockAvailable && $order->status !== 'cancelado') {
-                        $order->fulfillment_issue = null;
-                        if (in_array($order->status, ['pending', 'pendiente'])) {
-                            $order->status = 'confirmed';
-                        }
-                    } else {
-                        $order->fulfillment_issue = 'Pago confirmado: revisar stock o pedido cancelado antes de preparar o reembolsar.';
-                    }
-                }
-                if ($status === 'paid' && ! $stockAvailable) {
-                    $order->fulfillment_issue = 'Pago confirmado: revisar stock o pedido cancelado antes de preparar o reembolsar.';
-                }
-                $order->save();
-
-                return $before + ['payment_status_after' => $order->payment_status, 'order_status_after' => $order->status, 'result' => 'updated'];
-            }, 3);
-            // This log describes a committed transaction, never an update rolled back later.
+            $updated = $reconciliation->verify($id, 'webhook', $context['notification_id']);
+            $this->trace('webhook_payment_fetched', $context + ['order_id' => $updated['order_id']] + $updated['payment']);
+            $this->trace('webhook_order_located', $context + ['order_id' => $updated['order_id'],
+                'stored_preference_id' => $updated['stored_preference_id']]);
+            $http = $updated['http'];
+            unset($updated['payment'], $updated['http'], $updated['stored_preference_id']);
+            abort_unless($http === 200, $http);
             $this->trace('webhook_processed', $context + $updated);
         } catch (HttpExceptionInterface $exception) {
             $this->trace('webhook_failed', $context + ['exception_class' => $exception::class, 'reason' => 'payment_validation_failed', 'http_status' => $exception->getStatusCode()]);
@@ -146,14 +73,6 @@ class MercadoPagoWebhookController extends Controller
         }
 
         return response()->json(['received' => true]);
-    }
-
-    private function paymentTrace(array $payment, array $context): void
-    {
-        $this->trace('webhook_payment_fetched', $context + [
-            'payment_id' => $payment['id'] ?? null, 'payment_status' => $payment['status'] ?? null,
-            'external_reference' => $payment['external_reference'] ?? null, 'preference_id' => $payment['preference_id'] ?? null,
-        ]);
     }
 
     private function trace(string $event, array $context): void

@@ -14,7 +14,7 @@
         <a class="auth-brand" href="{{ route('home') }}" aria-label="Shop D. Nakama, inicio">
             <x-store.art :x="30" :y="42" :w="113" :h="113" label="Logo Shop D. Nakama" class="auth-logo"/>
             <span class="auth-wordmark">SHOP D. <em>NAKAMA</em></span>
-            <span class="auth-brand-caption">ANIME · CULTURA JAPONESA</span>
+            <span class="auth-brand-caption">ANIME · CULTURA GEEK</span>
         </a>
         <section class="auth-card" aria-labelledby="auth-title">
             <header class="auth-heading"><span class="auth-heading-accent" aria-hidden="true"></span><h1 id="auth-title">{{ $title ?? 'Tu cuenta, nakama' }}</h1>@isset($subtitle)<p>{{ $subtitle }}</p>@endisset</header>
