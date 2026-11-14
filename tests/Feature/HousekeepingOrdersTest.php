@@ -63,19 +63,23 @@ class HousekeepingOrdersTest extends TestCase
 
     public function test_admin_can_change_each_valid_order_status_without_changing_payment_or_amounts(): void
     {
-        $order = $this->order(User::factory()->create());
+        $order = $this->order(User::factory()->create(), ['payment_status' => 'pagado']);
+        $order->items()->create(['product_name' => 'Histórico', 'quantity' => 1, 'unit_price' => 20000, 'line_total' => 20000]);
+        $order->forceFill(['stock_deducted_at' => now()])->save();
         $this->actingAs(User::factory()->create(['role' => 'admin']));
-        foreach (array_keys(Order::STATUSES) as $status) {
+        foreach (['pending', 'pendiente', 'confirmed', 'confirmado', 'preparando', 'enviado', 'entregado'] as $status) {
             $this->patch(route('housekeeping.orders.status', $order), [
                 'status' => $status, 'payment_status' => 'pagado', 'total' => 0, 'user_id' => auth()->id(),
             ])->assertSessionHasNoErrors()->assertRedirect(route('housekeeping.orders.show', $order));
             $this->assertSame($status, $order->fresh()->status);
-            $this->assertSame('pendiente', $order->fresh()->payment_status);
+            $this->assertSame('pagado', $order->fresh()->payment_status);
             $this->assertSame('22000.00', $order->fresh()->total);
         }
         $this->patch(route('housekeeping.orders.status', $order), ['status' => 'inventado'])->assertSessionHasErrors('status');
         $this->patch(route('housekeeping.orders.status', $order), [])->assertSessionHasErrors('status');
-        $this->assertSame('cancelado', $order->fresh()->status);
+        $this->patch(route('housekeeping.orders.status', $order), ['status' => 'cancelado'])->assertSessionHasErrors('status');
+        $this->patch(route('housekeeping.orders.status', $order), ['status' => 'pendiente'])->assertSessionHasErrors('status');
+        $this->assertSame('entregado', $order->fresh()->status);
     }
 
     public function test_guests_and_normal_users_cannot_enter_any_order_or_customer_admin_route(): void
@@ -95,6 +99,28 @@ class HousekeepingOrdersTest extends TestCase
             $this->call($method, $url, ['status' => 'entregado'])->assertForbidden();
         }
         $this->assertSame('pendiente', $order->fresh()->status);
+    }
+
+    public function test_financial_and_inventory_guards_apply_to_every_fulfillment_target(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'admin']));
+        foreach (['pending', 'pendiente', 'rejected', 'rechazado', 'refunded', 'reembolsado', 'charged_back', 'cancelled'] as $payment) {
+            $order = $this->order(User::factory()->create(), ['payment_status' => $payment]);
+            foreach (['confirmed', 'confirmado', 'preparando', 'enviado', 'entregado'] as $target) {
+                $this->patch(route('housekeeping.orders.status', $order), ['status' => $target, 'payment_status' => 'paid'])
+                    ->assertSessionHasErrors('status');
+                $this->assertSame('pendiente', $order->fresh()->status);
+            }
+        }
+        $order = $this->order(User::factory()->create(), ['payment_status' => 'paid']);
+        $order->items()->create(['product_name' => 'Histórico', 'quantity' => 1, 'unit_price' => 20000, 'line_total' => 20000]);
+        foreach ([[], ['stock_deducted_at' => now(), 'fulfillment_issue' => 'Revisar'],
+            ['stock_deducted_at' => now(), 'fulfillment_issue' => null, 'stock_restored_at' => now()]] as $attributes) {
+            $order->forceFill($attributes)->save();
+            $this->patch(route('housekeeping.orders.status', $order), ['status' => 'preparando'])->assertSessionHasErrors('status');
+        }
+        $order->forceFill(['stock_restored_at' => null])->save();
+        $this->patch(route('housekeeping.orders.status', $order), ['status' => 'preparando'])->assertSessionHasNoErrors();
     }
 
     public function test_order_filters_combine_status_payment_date_customer_and_search(): void

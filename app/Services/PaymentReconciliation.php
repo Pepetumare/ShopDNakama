@@ -12,6 +12,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class PaymentReconciliation
 {
@@ -182,8 +183,8 @@ class PaymentReconciliation
                 }
                 $order->fulfillment_issue = null;
             }
-        } elseif ($custom && $mapped === 'refunded') {
-            $order->fulfillment_issue = 'Pago personalizado reembolsado: revisar la producción antes de continuar.';
+        } elseif ($mapped === 'refunded') {
+            $order->fulfillment_issue ??= 'Pago reembolsado o en contracargo: revisar la preparación y entrega antes de continuar.';
         }
         $order->save();
 
@@ -246,13 +247,51 @@ class PaymentReconciliation
     public function annotate(PaymentTransaction $payment, int $actor, string $note, bool $resolve): void
     {
         DB::transaction(function () use ($payment, $actor, $note, $resolve) {
+            $order = Order::whereKey($payment->order_id)->lockForUpdate()->firstOrFail();
             $locked = PaymentTransaction::whereKey($payment->id)->lockForUpdate()->firstOrFail();
+            abort_unless($locked->order_id === $order->id, 409);
             abort_if($resolve && (! $locked->incident || $locked->resolved_at), 409);
             if ($resolve) {
                 $locked->update(['resolved_at' => now()]);
             }
             $this->record('admin', (string) Str::uuid(), $resolve ? 'resolved_manually' : 'observation',
-                $locked->order, $locked, $locked->provider_payment_id, $actor, note: $note);
+                $order, $locked, $locked->provider_payment_id, $actor, note: $note);
+        }, 3);
+    }
+
+    public function resolveFulfillment(Order $order, User $actor, string $note): void
+    {
+        abort_unless($actor->isAdmin(), 403);
+        abort_if(trim($note) === '' || mb_strlen($note) > 1000, 422);
+        DB::transaction(function () use ($order, $actor, $note) {
+            $custom = $order->custom_request_id
+                ? CustomRequest::whereKey($order->custom_request_id)->lockForUpdate()->firstOrFail() : null;
+            $locked = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
+            if (! filled($locked->fulfillment_issue)) {
+                return;
+            }
+            if ($custom && ! in_array($custom->status, ['approved', 'in_production', 'ready', 'completed'], true)) {
+                throw ValidationException::withMessages(['status' => 'La solicitud personalizada no permite continuar la preparación.']);
+            }
+            $original = $locked->fulfillment_issue;
+            // Clear only in memory until the shared policy accepts the persisted financial and stock state.
+            $locked->fulfillment_issue = null;
+            $locked->assertFulfillable();
+            $quantities = $locked->items()->whereNotNull('product_id')->get()->groupBy('product_id')
+                ->map(fn ($lines) => (int) $lines->sum('quantity'));
+            $reservations = $this->reservations->rows($locked, lock: true);
+            foreach ($reservations as $reservation) {
+                if ($reservation->status !== 'consumed'
+                    || (int) $reservation->quantity !== $quantities->get($reservation->product_id)) {
+                    throw ValidationException::withMessages(['status' => 'Las reservas no acreditan la asignación del inventario.']);
+                }
+            }
+            if ($reservations->isNotEmpty() && $reservations->count() !== $quantities->count()) {
+                throw ValidationException::withMessages(['status' => 'La asignación de inventario está incompleta.']);
+            }
+            $locked->save();
+            $this->record('admin', (string) Str::uuid(), 'fulfillment_resolved', $locked,
+                actor: $actor->id, note: 'Incidencia original: '.$original."\nMotivo: ".$note);
         }, 3);
     }
 

@@ -57,11 +57,14 @@ class OrderController extends Controller
         \Illuminate\Support\Facades\DB::transaction(function () use ($request, $order) {
             $locked = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
             $status = $request->validated('status');
-            if (in_array($status, ['confirmed', 'confirmado', 'preparando', 'enviado', 'entregado'], true)
-                && ! $locked->stock_deducted_at && app(\App\Services\StockReservations::class)->rows($locked)->isNotEmpty()) {
-                throw \Illuminate\Validation\ValidationException::withMessages([
-                    'status' => 'El pedido necesita un pago confirmado con stock asignado antes de avanzar.',
-                ]);
+            $rank = ['pending' => 0, 'pendiente' => 0, 'confirmed' => 1, 'confirmado' => 1,
+                'preparando' => 2, 'enviado' => 3, 'entregado' => 4, 'cancelado' => 5];
+            if ($rank[$status] < ($rank[$locked->status] ?? 5)
+                || ($status === 'cancelado' && in_array($locked->status, ['enviado', 'entregado'], true))) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['status' => 'El estado actual no permite esa transición.']);
+            }
+            if (in_array($status, ['confirmed', 'confirmado', 'preparando', 'enviado', 'entregado'], true)) {
+                $locked->assertFulfillable();
             }
             $locked->update(['status' => $status]);
         }, 3);

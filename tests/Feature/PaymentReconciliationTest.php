@@ -15,6 +15,22 @@ use Tests\StoreTestCase;
 
 class PaymentReconciliationTest extends StoreTestCase
 {
+    public function test_reversals_preserve_preparation_history_and_block_further_shipping(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'admin']));
+        foreach (['refunded', 'charged_back'] as $status) {
+            $order = $this->order();
+            $id = (string) (9000 + $order->id);
+            $this->notify($order, $id, 'approved')->assertOk();
+            $this->patch(route('housekeeping.orders.status', $order), ['status' => 'preparando'])->assertSessionHasNoErrors();
+            $this->notify($order, $id, $status)->assertOk();
+            $this->assertSame('preparando', $order->fresh()->status);
+            $this->assertNotEmpty($order->fresh()->fulfillment_issue);
+            $this->patch(route('housekeeping.orders.status', $order), ['status' => 'enviado'])->assertSessionHasErrors('status');
+            $this->assertDatabaseHas('payment_transactions', ['order_id' => $order->id, 'provider_status' => $status]);
+        }
+    }
+
     private function order(array $attributes = []): Order
     {
         $order = Order::create($attributes + ['customer_name' => 'Comprador', 'customer_email' => 'test@example.test',

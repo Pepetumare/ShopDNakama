@@ -51,8 +51,11 @@ class ManageCustomQuote
                 throw ValidationException::withMessages(['status' => 'El estado solicitado no corresponde al flujo actual de la solicitud.']);
             }
             if (in_array($data['status'], ['approved', 'in_production', 'ready', 'completed'], true)
-                && (! $order || ! in_array($order->payment_status, ['paid', 'pagado'], true) || $order->status === 'cancelado')) {
+                && ! $order) {
                 throw ValidationException::withMessages(['status' => 'Primero debe confirmarse el pago mediante Mercado Pago.']);
+            }
+            if ($order && in_array($data['status'], ['approved', 'in_production', 'ready', 'completed'], true)) {
+                $order->assertFulfillable();
             }
             $quote->update($data);
             if ($order && in_array($data['status'], ['rejected', 'cancelled'], true)

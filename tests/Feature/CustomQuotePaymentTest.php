@@ -5,14 +5,38 @@ namespace Tests\Feature;
 use App\Models\CustomRequest;
 use App\Models\Order;
 use App\Models\User;
+use App\Services\ManageCustomQuote;
 use App\Services\MercadoPagoService;
 use Illuminate\Database\QueryException;
+use Illuminate\Validation\ValidationException;
 use Mockery\MockInterface;
 use Tests\StoreTestCase;
 
 class CustomQuotePaymentTest extends StoreTestCase
 {
     private MockInterface $mp;
+
+    public function test_custom_order_fulfillment_requires_payment_and_no_incident(): void
+    {
+        $quote = $this->quote();
+        $order = $this->accept($quote);
+        $this->actingAs(User::factory()->create(['role' => 'admin']));
+        $this->patch(route('housekeeping.orders.status', $order), ['status' => 'preparando'])->assertSessionHasErrors('status');
+        $this->notify($order)->assertOk();
+        $this->patch(route('housekeeping.orders.status', $order), ['status' => 'preparando'])->assertSessionHasNoErrors();
+        $order->refresh()->forceFill(['fulfillment_issue' => 'Revisar producción'])->save();
+        $this->patch(route('housekeeping.orders.status', $order), ['status' => 'enviado'])->assertSessionHasErrors('status');
+        try {
+            app(ManageCustomQuote::class)->update($quote->fresh(), ['status' => 'in_production']);
+            $this->fail('Production must be blocked by the incident.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('status', $exception->errors());
+        }
+        $this->post(route('housekeeping.orders.resolve-fulfillment', $order), ['note' => 'Producción revisada'])
+            ->assertSessionHasNoErrors();
+        app(ManageCustomQuote::class)->update($quote->fresh(), ['status' => 'in_production']);
+        $this->assertSame('in_production', $quote->fresh()->status);
+    }
 
     protected function setUp(): void
     {

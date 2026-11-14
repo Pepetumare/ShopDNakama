@@ -68,4 +68,12 @@ class PaymentReconciliationController extends Controller
 
         return to_route('housekeeping.payments.show', $payment->order_id)->with('status', 'Acción registrada.');
     }
+
+    public function resolveFulfillment(Request $request, Order $order, PaymentReconciliation $reconciliation)
+    {
+        $data = $request->validate(['note' => ['required', 'string', 'max:1000']]);
+        $reconciliation->resolveFulfillment($order, $request->user(), $data['note']);
+
+        return back()->with('status', 'Incidencia de preparación resuelta y registrada.');
+    }
 }

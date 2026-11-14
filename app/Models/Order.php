@@ -7,12 +7,30 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class Order extends Model
 {
     public const STATUSES = ['pending' => 'Pendiente', 'pendiente' => 'Pendiente', 'confirmed' => 'Confirmado', 'confirmado' => 'Confirmado', 'preparando' => 'Preparando', 'enviado' => 'Enviado', 'entregado' => 'Entregado', 'cancelado' => 'Cancelado'];
 
     public const PAYMENT_STATUSES = ['pending' => 'Pendiente de pago', 'paid' => 'Pagado', 'rejected' => 'Rechazado', 'refunded' => 'Reembolsado', 'cancelled' => 'Cancelado', 'pendiente' => 'Pendiente de pago', 'pagado' => 'Pagado', 'rechazado' => 'Rechazado', 'reembolsado' => 'Reembolsado'];
+
+    // The caller must hold the order row lock throughout validation and update.
+    public function assertFulfillable(): void
+    {
+        if (! in_array($this->payment_status, ['paid', 'pagado'], true)) {
+            throw ValidationException::withMessages(['status' => 'El pedido requiere un pago confirmado y vigente.']);
+        }
+        if ($this->status === 'cancelado' || filled($this->fulfillment_issue)
+            || $this->paymentTransactions()->whereNotNull('incident')->whereNull('resolved_at')->lockForUpdate()->get()->isNotEmpty()) {
+            throw ValidationException::withMessages(['status' => 'Resuelve la cancelación o incidencia del pedido antes de continuar.']);
+        }
+        $items = $this->items()->get();
+        $requiresStock = ! $this->custom_request_id || $items->whereNotNull('product_id')->isNotEmpty();
+        if ($items->isEmpty() || ($requiresStock && (! $this->stock_deducted_at || $this->stock_restored_at))) {
+            throw ValidationException::withMessages(['status' => 'El pedido requiere stock asignado y sin devolución antes de continuar.']);
+        }
+    }
 
     protected $fillable = ['number', 'user_id', 'customer_name', 'customer_email', 'customer_phone', 'shipping_address_line1', 'shipping_address_line2', 'shipping_city', 'shipping_region', 'shipping_postal_code', 'shipping_country', 'status', 'payment_method', 'payment_status', 'subtotal', 'shipping_cost', 'discount_total', 'total'];
 
