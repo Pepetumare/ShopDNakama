@@ -19,6 +19,7 @@ Route::middleware(['auth', 'admin'])->prefix('housekeeping')->name('housekeeping
     Route::get('/', [HousekeepingController::class, 'index'])->name('dashboard');
     Route::get('/payments', [PaymentReconciliationController::class, 'index'])->name('payments.index');
     Route::get('/orders/{order}/payments', [PaymentReconciliationController::class, 'show'])->name('payments.show');
+    Route::post('/orders/{order}/fulfillment-resolution', [PaymentReconciliationController::class, 'resolveFulfillment'])->name('orders.resolve-fulfillment');
     Route::post('/orders/{order}/payments/review', [PaymentReconciliationController::class, 'review'])->middleware('throttle:10,1')->name('payments.review');
     Route::post('/payments/{payment}/observations', [PaymentReconciliationController::class, 'annotate'])->name('payments.annotate');
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');

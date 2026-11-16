@@ -4,6 +4,14 @@
 <h1>Conciliación del pedido {{ $order->number }}</h1>
 <p>{{ $order->customer_name }} · {{ $order->payment_status_label }}</p>
 <p><a href="{{ route('housekeeping.orders.show', $order) }}">Volver al pedido</a></p>
+@if($order->fulfillment_issue)
+    <p>{{ $order->fulfillment_issue }}</p>
+    <form method="post" action="{{ route('housekeeping.orders.resolve-fulfillment', $order) }}">@csrf
+        <label for="fulfillment-note">Motivo y evidencia de resolución de preparación</label>
+        <textarea id="fulfillment-note" name="note" required maxlength="1000"></textarea>
+        <button type="submit">Verificar y resolver bloqueo de preparación</button>
+    </form>
+@endif
 @if($order->mercadopago_payment_id)
     <p>Pago asociado al pedido: {{ $order->mercadopago_payment_id }}</p>
 @endif
