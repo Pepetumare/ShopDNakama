@@ -9,6 +9,18 @@
         <p>Pago reembolsado. Contacta a la tienda para revisar la solicitud.</p>
     @else
         <p>Cotización pendiente de pago</p>
+        @php($intent = $order->customPaymentIntent)
+        @if(in_array($intent?->state, ['sending', 'reconciliation_required'], true) || (! $intent && ! $order->mercadopago_preference_id) || $order->hasCustomPaymentHold())
+            @if(in_array($intent?->outcome, ['multiple_candidates', 'candidate_mismatch', 'outside_search_window', 'association_conflict', 'order_snapshot_changed', 'candidate_conflict', 'payment_candidate_conflict'], true) || $intent?->sending_at?->lt(now()->subDay()))
+                <p role="status">El inicio de tu pago requiere asistencia. Contacta a la tienda indicando el número de pedido.</p>
+            @else
+                <p role="status">Estamos verificando el inicio de tu pago. No necesitas intentarlo nuevamente por ahora.</p>
+            @endif
+        @elseif($intent?->state === 'failed')
+            <p role="status">No se inició el pago. Puedes volver a intentarlo o contactar a la tienda.</p>
+        @elseif(($intent?->state === 'ready' || $order->mercadopago_preference_id) && in_array($order->status, ['pending', 'pendiente'], true) && $customRequest->status === 'quoted')
+            <p role="status">El pago está listo para continuar. Aún no hay un pago confirmado.</p>
+        @endif
     @endif
     <dl class="account-order-details">
         <div><dt>Número de pedido</dt><dd>{{ $order->number }}</dd></div>

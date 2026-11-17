@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Services\MercadoPagoService;
+use App\Services\MercadoPagoSingleRequestTransport;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use MercadoPago\MercadoPagoConfig;
 use MercadoPago\Net\MPHttpClient;
@@ -33,6 +34,7 @@ class CustomQuoteMercadoPagoServiceTest extends TestCase
             return new MPResponse(201, ['id' => 'sdk-pref', 'init_point' => 'https://www.mercadopago.cl/sdk-checkout']);
         });
         MercadoPagoConfig::setHttpClient($transport);
+        $this->app->instance(MercadoPagoSingleRequestTransport::class, $transport);
         try {
             $service = new MercadoPagoService;
             $this->assertSame(['id' => 'sdk-pref', 'url' => 'https://www.mercadopago.cl/sdk-checkout'], $service->createPreference($order));

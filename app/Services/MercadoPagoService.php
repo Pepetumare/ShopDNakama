@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CustomPaymentIntent;
 use App\Models\Order;
 use Illuminate\Support\Carbon;
 use MercadoPago\Client\Common\RequestOptions;
@@ -9,6 +10,7 @@ use MercadoPago\Client\Payment\PaymentClient;
 use MercadoPago\Client\Preference\PreferenceClient;
 use MercadoPago\MercadoPagoConfig;
 use MercadoPago\Net\MPSearchRequest;
+use MercadoPago\Resources\Preference;
 use RuntimeException;
 
 class MercadoPagoService
@@ -56,6 +58,10 @@ class MercadoPagoService
             'id' => $order->custom_request_id && $item->product_id === null ? 'custom-'.$order->custom_request_id : (string) $item->product_id, 'title' => $item->product_name,
             'quantity' => $item->quantity, 'unit_price' => (float) $item->unit_price, 'currency_id' => 'CLP',
         ])->all();
+        $intent = $order->custom_request_id ? CustomPaymentIntent::where('order_id', $order->id)->first() : null;
+        if ($intent) {
+            $items = $intent->snapshot['items'];
+        }
         $options = null;
         if ($order->custom_request_id) {
             $options = new RequestOptions;
@@ -67,19 +73,54 @@ class MercadoPagoService
             'expiration_date_from' => Carbon::parse($reservation->created_at)->toIso8601String(),
             'expiration_date_to' => Carbon::parse($reservation->expires_at)->toIso8601String(),
         ] : [];
-        $client = new PreferenceClient($reservation ? app(MercadoPagoSingleRequestTransport::class) : null);
+        $client = new PreferenceClient($reservation || $order->custom_request_id ? app(MercadoPagoSingleRequestTransport::class) : null);
         $preference = $client->create([
             'items' => $items,
             'payer' => ['name' => $order->customer_name, 'email' => $order->customer_email],
-            'shipments' => ['cost' => (float) $order->shipping_cost],
-            'external_reference' => $order->number,
-            'metadata' => ['order_id' => $order->id],
+            'shipments' => ['cost' => $intent ? $intent->snapshot['shipping_cents'] / 100 : (float) $order->shipping_cost],
+            'external_reference' => $intent?->external_reference ?? $order->number,
+            'metadata' => ['order_id' => $order->id] + ($intent ? ['custom_payment_intent' => $intent->token] : []),
             'back_urls' => $backUrls,
             'notification_url' => $baseUrl.'/webhooks/mercadopago',
             'auto_return' => 'approved',
         ] + $validity, $options);
 
-        return ['id' => $preference->id, 'url' => $preference->init_point];
+        return ['id' => $preference->id ?? null, 'url' => $preference->init_point ?? null];
+    }
+
+    public function customPreferencePage(string $reference, int $offset): array
+    {
+        $this->configure();
+        $result = (new PreferenceClient(app(MercadoPagoSingleRequestTransport::class)))->search(
+            new MPSearchRequest(20, $offset, ['external_reference' => $reference])
+        );
+        $rows = $result->elements ?? null;
+        $total = $result->total ?? null;
+        if (! is_array($rows) || ! is_int($total) || $total < 0 || count($rows) > 20
+            || $offset + count($rows) > $total || ($rows === [] && $offset < $total)) {
+            throw new RuntimeException('Incomplete preference search');
+        }
+        $ids = [];
+        foreach ($rows as $row) {
+            $id = $row->id ?? null;
+            if (! is_string($id) || ! preg_match('/\A[a-zA-Z0-9_-]{1,255}\z/', $id)) {
+                throw new RuntimeException('Invalid preference search identifier');
+            }
+            $ids[] = $id;
+        }
+        $next = $offset + count($rows);
+        if ($next < $total && isset($result->next_offset) && $result->next_offset !== $next) {
+            throw new RuntimeException('Invalid preference search pagination');
+        }
+
+        return ['ids' => $ids, 'total' => $total, 'next' => $next < $total ? $next : null];
+    }
+
+    public function customPreference(string $id): array
+    {
+        $this->configure();
+
+        return (new PreferenceClient(app(MercadoPagoSingleRequestTransport::class)))->get($id)->getResponse()->getContent();
     }
 
     public function findPreference(Order $order): ?array
@@ -104,7 +145,7 @@ class MercadoPagoService
         return ['id' => $preference->id, 'url' => $preference->init_point ?? null];
     }
 
-    private function matchesOrder(Order $order, \MercadoPago\Resources\Preference $preference): bool
+    private function matchesOrder(Order $order, Preference $preference): bool
     {
         $items = collect($preference->items ?? []);
         $byId = $items->keyBy('id');
@@ -138,12 +179,28 @@ class MercadoPagoService
         $payment = (new PaymentClient(app(MercadoPagoSingleRequestTransport::class)))->get($id);
         // The SDK Payment DTO omits this field even when the response includes it.
         $preference = $payment->getResponse()->getContent()['preference_id'] ?? null;
+        $raw = $payment->getResponse()->getContent();
+        $itemsCents = $this->paymentCents($raw['transaction_amount'] ?? null);
+        $shippingCents = $this->paymentCents($raw['shipping_amount'] ?? 0);
 
         return ['id' => (string) $payment->id, 'status' => $payment->status,
             'external_reference' => $payment->external_reference,
-            'amount' => $payment->transaction_amount, 'currency' => $payment->currency_id,
+            // Checkout Pro reports shipping separately. Buyer financing and fees are not order value.
+            'amount' => ($itemsCents + $shippingCents) / 100,
+            'shipping_amount' => $shippingCents / 100, 'currency' => $payment->currency_id,
             'preference_id' => $preference,
             'approved_at' => $payment->date_approved ?? null, 'updated_at' => $payment->date_last_updated ?? null];
+    }
+
+    private function paymentCents(mixed $amount): int
+    {
+        if ((! is_int($amount) && ! is_float($amount) && ! is_string($amount))
+            || ! preg_match('/\A\d{1,12}(?:\.\d{1,2})?\z/', (string) $amount)) {
+            throw new RuntimeException('Invalid provider payment amount');
+        }
+        [$whole, $fraction] = array_pad(explode('.', (string) $amount, 2), 2, '');
+
+        return (int) $whole * 100 + (int) str_pad($fraction, 2, '0');
     }
 
     public function searchPayments(Order $order, int $offset): array

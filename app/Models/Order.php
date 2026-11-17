@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -63,6 +64,22 @@ class Order extends Model
     public function paymentTransactions(): HasMany
     {
         return $this->hasMany(PaymentTransaction::class);
+    }
+
+    public function customPaymentIntent(): HasOne
+    {
+        return $this->hasOne(CustomPaymentIntent::class);
+    }
+
+    // For the final URL decision callers hold the order lock and lock the observed payments too.
+    public function hasCustomPaymentHold(bool $lock = false): bool
+    {
+        if (! $this->custom_request_id) {
+            return false;
+        }
+        $payments = $this->paymentTransactions()->blocksCustomCheckout()->orderBy('id');
+
+        return $lock ? $payments->lockForUpdate()->get()->isNotEmpty() : $payments->exists();
     }
 
     public function customRequest(): BelongsTo

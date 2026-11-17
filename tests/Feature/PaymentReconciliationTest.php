@@ -214,7 +214,8 @@ class PaymentReconciliationTest extends StoreTestCase
         Http::assertSent(fn ($request) => $request->method() === 'GET'
             && str_contains($request->url(), 'external_reference='.$order->number));
         $this->assertDatabaseHas('payment_reconciliation_events', ['order_id' => $order->id, 'outcome' => 'preference_mismatch']);
-        $this->assertDatabaseCount('payment_transactions', 0);
+        $this->assertDatabaseCount('payment_transactions', 1);
+        $this->assertDatabaseHas('payment_transactions', ['order_id' => $order->id, 'incident' => 'preference_mismatch', 'provider_status' => 'approved']);
         $this->assertSame('pending', $order->fresh()->payment_status);
     }
 }
