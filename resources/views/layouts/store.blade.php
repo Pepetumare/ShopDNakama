@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Shop D. Nakama: anime y cultura geek. Manga, figuras, billeteras, merchandising y accesorios para verdaderos nakamas.">
+    <meta name="description" content="{{ ($metaDescription ?? '') ?: 'Shop D. Nakama: anime y cultura geek. Manga, figuras, billeteras, merchandising y accesorios para verdaderos nakamas.' }}">
     <title>@yield('title', 'Shop D. Nakama | Anime y cultura geek')</title>
     @vite(['resources/css/store.css', 'resources/js/store.js'])
 </head>

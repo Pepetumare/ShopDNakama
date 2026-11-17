@@ -3,6 +3,7 @@
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\CheckoutController;
+use App\Http\Controllers\CollectionController;
 use App\Http\Controllers\CustomQuoteController;
 use App\Http\Controllers\CustomRequestController;
 use App\Http\Controllers\MercadoPagoWebhookController;
@@ -25,6 +26,7 @@ foreach (['success', 'pending', 'failure'] as $result) {
 }
 Route::post('/webhooks/mercadopago', MercadoPagoWebhookController::class)->name('webhooks.mercadopago');
 Route::get('/producto/{product:slug}', [ProductController::class, 'show'])->name('producto.show');
+Route::get('/coleccion/{collection}', CollectionController::class)->name('collections.show');
 
 Route::get('/dashboard', function () {
     return to_route('account.index');

@@ -2,6 +2,9 @@
 import customPreview from './custom-preview';
 import designAssistance from './design-assistance';
 import '../css/custom-preview.css';
+import mangaCollection from './manga-collection';
+
+Alpine.data('mangaCollection', mangaCollection);
 Alpine.data('customPreview', customPreview);
 Alpine.data('designAssistance', designAssistance);
 
