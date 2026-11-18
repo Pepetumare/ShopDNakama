@@ -1,4 +1,7 @@
 @props(['product'])
+@if($product->series_id)
+    <x-store.collection-card :product="$product"/>
+@else
 @php($available = $product->is_active && $product->category->is_active)
 <article class="product-card">
     <div class="product-image">
@@ -27,3 +30,4 @@
         </div>
     </div>
 </article>
+@endif

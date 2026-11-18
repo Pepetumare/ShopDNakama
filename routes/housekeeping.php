@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Housekeeping\CategoryController;
+use App\Http\Controllers\Housekeeping\CollectionController;
 use App\Http\Controllers\Housekeeping\CustomerController;
 use App\Http\Controllers\Housekeeping\CustomRequestController;
 use App\Http\Controllers\Housekeeping\OrderController;
@@ -30,6 +31,10 @@ Route::middleware(['auth', 'admin'])->prefix('housekeeping')->name('housekeeping
     Route::resource('categories', CategoryController::class)->only(['index', 'create', 'store', 'edit', 'update']);
     Route::patch('/categories/{category}/status', [CategoryController::class, 'status'])->name('categories.status');
     Route::resource('products', ProductController::class)->only(['index', 'create', 'store', 'edit', 'update']);
+    Route::resource('collections', CollectionController::class)->except(['show', 'destroy']);
+    Route::post('/collections/{collection}/volumes', [CollectionController::class, 'storeVolume'])->name('collections.volumes.store');
+    Route::patch('/collections/{collection}/volumes/{volume}', [CollectionController::class, 'updateVolume'])->scopeBindings()->name('collections.volumes.update');
+    Route::delete('/collections/{collection}/volumes/{volume}', [CollectionController::class, 'destroyVolume'])->scopeBindings()->name('collections.volumes.destroy');
     Route::patch('/products/{product}/status', [ProductController::class, 'status'])->name('products.status');
     Route::delete('/products/{product}/images/{image}', [ProductController::class, 'destroyImage'])->scopeBindings()->name('products.images.destroy');
     Route::get('/personalizados', [CustomRequestController::class, 'index'])->name('custom-requests.index');
