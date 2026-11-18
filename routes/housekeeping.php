@@ -21,6 +21,7 @@ Route::middleware(['auth', 'admin'])->prefix('housekeeping')->name('housekeeping
     Route::get('/orders/{order}/payments', [PaymentReconciliationController::class, 'show'])->name('payments.show');
     Route::post('/orders/{order}/fulfillment-resolution', [PaymentReconciliationController::class, 'resolveFulfillment'])->name('orders.resolve-fulfillment');
     Route::post('/orders/{order}/payments/review', [PaymentReconciliationController::class, 'review'])->middleware('throttle:10,1')->name('payments.review');
+    Route::post('/orders/{order}/payments/custom-intent', [PaymentReconciliationController::class, 'customIntent'])->middleware('throttle:10,1')->name('payments.custom-intent');
     Route::post('/payments/{payment}/observations', [PaymentReconciliationController::class, 'annotate'])->name('payments.annotate');
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
     Route::get('/orders/{order}', [OrderController::class, 'show'])->name('orders.show');

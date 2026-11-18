@@ -18,7 +18,7 @@ Los estados terminales comerciales se evalúan en el pedido y la reserva bajo bl
 
 ## Mercado Pago y fallos
 
-El SDK 3.16.0 incluye búsqueda de preferencias por referencia y su transporte predeterminado reintenta solicitudes fallidas. La creación de Preferencias API no documenta una garantía de deduplicación. El checkout de catálogo usa el cliente del SDK con transporte acotado a 10 segundos por solicitud, sin reintentos ni redirecciones HTTP. La llamada ocurre fuera de la transacción. Personalizados conserva su flujo y transporte.
+El SDK 3.16.0 incluye búsqueda de preferencias por referencia y su transporte predeterminado reintenta solicitudes fallidas. La creación de Preferencias API no documenta una garantía de deduplicación. El checkout de catálogo usa el cliente del SDK con transporte acotado a 10 segundos por solicitud, sin reintentos ni redirecciones HTTP. La llamada ocurre fuera de la transacción. Desde [AUD-001](aud-001-custom-payment-recovery.md), personalizados también utiliza envío único fuera de transacción, con intención e historial propios.
 
 Ante timeout, respuesta perdida o fallo al persistir el ID, el siguiente POST del comprador solo busca por referencia del pedido. Se exige un resultado único y se verifica el detalle de la preferencia, incluyendo ID, referencia, plazo, ítems, moneda y despacho. Si un webhook válido llega antes de guardar el ID, recibe 503 para permitir el reintento del proveedor. Se conservan las verificaciones de importe, moneda, firma y preferencia del webhook. Se mantiene la retención de COM-01 si el resultado externo sigue incierto, aun cuando localmente no haya ID de preferencia.
 

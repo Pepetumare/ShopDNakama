@@ -7,6 +7,7 @@ return [
         'webhook_secret' => env('MERCADOPAGO_WEBHOOK_SECRET'),
         'webhook_diagnostics' => env('MERCADOPAGO_WEBHOOK_DIAGNOSTICS', true),
         'shipping_cost' => env('MERCADOPAGO_SHIPPING_COST', 3990),
+        'collector_id' => env('MERCADOPAGO_COLLECTOR_ID'),
     ],
 
     /*

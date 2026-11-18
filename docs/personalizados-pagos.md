@@ -1,5 +1,7 @@
 # Cotizaciones: pedidos y Mercado Pago
 
+Actualización AUD-001 (2026-11-16): la publicación y recuperación de preferencias se rigen ahora por [aud-001-custom-payment-recovery.md](aud-001-custom-payment-recovery.md). Un resultado ambiguo no habilita otro POST; los detalles de emisión e idempotencia de este documento describen la implementación anterior.
+
 ## Resultado y alcance
 
 El administrador ingresa un precio positivo y la solicitud pasa a Cotizado. El propietario confirma datos de despacho, acepta y paga en Checkout Pro. Se genera un pedido real con el monto de la base de datos, visible en Mis pedidos. Únicamente el webhook con pago aprobado cambia el pedido a paid y la solicitud de quoted a approved.

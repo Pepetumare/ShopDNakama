@@ -5,7 +5,10 @@
 <x-custom-requests.design-assistance :custom-request="$customRequest"/>
 @if($customRequest->status !== 'quoted')<x-custom-requests.quote-breakdown :custom-request="$customRequest"/>@endif
 <x-custom-requests.payment-status :custom-request="$customRequest"/>
-@if($customRequest->status === 'quoted' && (float) $customRequest->quoted_price > 0)
+@php($intent = $customRequest->order?->customPaymentIntent)
+@php($verifying = $customRequest->order && (in_array($intent?->state, ['sending', 'reconciliation_required'], true) || (! $intent && ! $customRequest->order->mercadopago_preference_id) || $customRequest->order->hasCustomPaymentHold()))
+@php($payable = ! $customRequest->order || (in_array($customRequest->order->status, ['pending', 'pendiente'], true) && in_array($customRequest->order->payment_status, ['pending', 'pendiente', 'rejected', 'rechazado', 'cancelled'], true)))
+@if($customRequest->status === 'quoted' && (float) $customRequest->quoted_price > 0 && $payable && ! $verifying)
     @php($shipping = $customRequest->order?->shipping_cost ?? max(0, (int) config('services.mercadopago.shipping_cost')))
     <h3>Aceptar cotización</h3>
     <dl class="account-order-details"><div><dt>Cotización base</dt><dd><x-store.price :amount="$customRequest->effective_base_quoted_price"/></dd></div>@if($customRequest->design_assistance)<div><dt>Diseño asistido</dt><dd><x-store.price :amount="$customRequest->design_assistance_fee"/></dd></div>@endif<div><dt>Despacho</dt><dd><x-store.price :amount="$shipping"/></dd></div><div><dt>Total a pagar</dt><dd><x-store.price :amount="(float) $customRequest->quoted_price + (float) $shipping"/></dd></div></dl>

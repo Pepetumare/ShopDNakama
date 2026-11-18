@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\CustomRequest;
 use App\Models\User;
 use App\Services\MercadoPagoService;
+use App\Services\MercadoPagoSingleRequestTransport;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use MercadoPago\MercadoPagoConfig;
@@ -142,6 +143,7 @@ class DesignAssistanceTest extends StoreTestCase
         $originalClient = MercadoPagoConfig::getHttpClient();
         $originalToken = MercadoPagoConfig::getAccessToken();
         MercadoPagoConfig::setHttpClient($transport);
+        $this->app->instance(MercadoPagoSingleRequestTransport::class, $transport);
         try {
             $this->actingAs($owner)->post(route('account.custom-requests.accept', $request), ['shipping_address_line1' => 'Nakama 123', 'shipping_city' => 'Santiago', 'shipping_region' => 'Metropolitana', 'design_assistance' => false, 'design_assistance_fee' => 0, 'quoted_price' => 1, 'total' => 1, 'shipping_cost' => 0])->assertSessionHasNoErrors()->assertRedirect('https://www.mercadopago.cl/assisted-checkout');
             $order = $request->order()->firstOrFail();
