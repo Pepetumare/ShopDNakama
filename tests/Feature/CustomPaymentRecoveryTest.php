@@ -2,6 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\CatalogPaymentCursor;
+use App\Models\CatalogPaymentPage;
+use App\Models\CatalogPaymentWork;
 use App\Models\CustomPaymentIntent;
 use App\Models\Order;
 use App\Models\User;
@@ -565,6 +568,69 @@ class CustomPaymentRecoveryTest extends StoreTestCase
         $this->assertSame(0, $order->customPaymentIntent()->value('payment_offset'));
         $this->assertSame('paid', $order->fresh()->payment_status);
         $this->assertDatabaseCount('payment_transactions', 11);
+    }
+
+    public function test_scheduler_persists_failed_custom_payment_before_advancing_and_retries_it_after_discovery(): void
+    {
+        $order = $this->order();
+        $this->uncertain($order, 'pref-one');
+        $detail = $this->detail($order);
+        $offsets = [];
+        $fail = true;
+        $this->fake(function ($request) use ($order, $detail, &$offsets, &$fail) {
+            if (str_contains($request->url(), '/preferences/')) {
+                return Http::response($detail);
+            }
+            if (str_contains($request->url(), '/payments/search')) {
+                parse_str(parse_url($request->url(), PHP_URL_QUERY), $query);
+                $offsets[] = (int) $query['offset'];
+                $ids = (int) $query['offset'] === 0 ? range(700, 709) : [710];
+
+                return Http::response(['results' => array_map(fn ($id) => ['id' => $id], $ids), 'paging' => ['total' => 11]]);
+            }
+            $id = basename(parse_url($request->url(), PHP_URL_PATH));
+            if ($id === '701' && $fail) {
+                $fail = false;
+                throw new ConnectionException('Simulated payment GET interruption');
+            }
+
+            return Http::response($this->payment($order, $id, $id === '710' ? 'approved' : 'pending'));
+        });
+        $service = app(PaymentReconciliation::class);
+        $this->assertSame(1, $service->reviewBatch());
+        $this->assertSame(10, $order->customPaymentIntent()->value('payment_offset'));
+        $this->assertSame(10, CatalogPaymentCursor::where('order_id', $order->id)->sole()->offset);
+        $this->assertSame(array_map('strval', range(700, 709)), DB::table('catalog_payment_work')
+            ->where('order_id', $order->id)->orderBy('payment_id')->pluck('payment_id')->all());
+        $failed = CatalogPaymentWork::where('order_id', $order->id)->where('payment_id', '701')->sole();
+        $this->assertNull($failed->last_http);
+        $this->assertNull($failed->last_verified_at);
+        $this->assertSame(0, $failed->verification_version);
+        $this->assertSame(1, $failed->failures);
+        $this->assertTrue($failed->next_attempt_at->gt(now()));
+        $this->assertTrue($failed->next_attempt_at->lte(now()->addMinutes(15)));
+        $this->assertDatabaseHas('catalog_payment_pages', ['order_id' => $order->id, 'offset' => 0, 'state' => 'pending']);
+        $this->assertTrue($order->customPaymentIntent()->firstOrFail()->financial_review_required);
+        $this->assertTrue($order->fresh()->hasCustomPaymentHold());
+        $this->assertDatabaseMissing('payment_transactions', ['order_id' => $order->id, 'provider_payment_id' => '701']);
+        $this->travel(16)->minutes();
+        $this->assertSame(1, $service->reviewBatch());
+        $this->assertSame([0, 10], $offsets);
+        $this->assertSame(0, $order->customPaymentIntent()->value('payment_offset'));
+        $this->assertFalse(CatalogPaymentCursor::where('order_id', $order->id)->sole()->scan_open);
+        $this->assertDatabaseHas('catalog_payment_work', ['order_id' => $order->id, 'payment_id' => '701',
+            'last_http' => 200, 'failures' => 0, 'attempts' => 2]);
+        $this->assertSame(0, CatalogPaymentPage::where('order_id', $order->id)->where('state', 'pending')->count());
+        $this->assertTrue($order->customPaymentIntent()->firstOrFail()->financial_review_required);
+        $this->assertSame('paid', $order->fresh()->payment_status);
+        $this->assertTrue($order->fresh()->hasCustomPaymentHold());
+        $this->assertDatabaseCount('payment_transactions', 11);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->travel(121)->minutes();
+        $this->assertSame(1, $service->reviewBatch());
+        $this->assertSame('paid', $order->fresh()->payment_status);
+        $this->assertDatabaseCount('payment_transactions', 11);
+        $this->assertDatabaseCount('stock_movements', 0);
     }
 
     public function test_a_later_page_error_retains_prior_page_evidence_and_cannot_associate(): void
