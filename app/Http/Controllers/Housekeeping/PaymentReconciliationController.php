@@ -76,12 +76,13 @@ class PaymentReconciliationController extends Controller
 
     public function review(Request $request, Order $order, PaymentReconciliation $reconciliation)
     {
-        $data = $request->validate(['offset' => ['nullable', 'integer', 'min:0', 'max:1000']]);
+        $data = $request->validate(['offset' => ['nullable', 'integer', 'min:0', 'max:2147483647']]);
         $result = $reconciliation->reviewOrder($order, 'admin', $request->user()->id, (int) ($data['offset'] ?? 0));
         $message = match ($result['outcome']) {
             'search_empty' => 'La búsqueda no devolvió pagos. Esto no confirma el cierre del intento.',
             'search_error' => 'Falló la consulta al proveedor. Reintenta más tarde.',
             'review_in_progress' => 'Ya hay una revisión en curso para este pedido.',
+            'review_superseded' => 'Otra revisión tomó el relevo. Consulta el resultado más reciente.',
             'review_incomplete' => 'La revisión quedó incompleta. Consulta los resultados registrados.',
             default => 'Consulta registrada. Revisa los pagos y las incidencias.',
         };

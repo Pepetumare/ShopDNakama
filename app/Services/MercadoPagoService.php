@@ -207,22 +207,34 @@ class MercadoPagoService
     {
         $this->configure();
         $limit = 10;
-        $result = (new PaymentClient(app(MercadoPagoSingleRequestTransport::class)))->search(
-            new MPSearchRequest($limit, $offset, ['external_reference' => $order->number, 'sort' => 'date_created', 'criteria' => 'asc'])
-        );
-        $rows = $result->results ?? null;
-        $total = data_get($result->paging ?? null, 'total');
-        if (! is_array($rows) || ! is_numeric($total) || count($rows) > $limit || ($rows === [] && $offset < (int) $total)) {
+        try {
+            $result = (new PaymentClient(app(MercadoPagoSingleRequestTransport::class)))->search(
+                new MPSearchRequest($limit, $offset, ['external_reference' => $order->number,
+                    'sort' => $order->custom_request_id ? 'date_created' : 'id', 'criteria' => 'asc'])
+            );
+        } catch (\TypeError $exception) {
+            throw new RuntimeException('Respuesta de búsqueda de pagos inválida.', 0, $exception);
+        }
+        // Validate raw paging metadata before accepting the SDK's integer coercion.
+        $raw = $result->getResponse()->getContent();
+        $rows = data_get($raw, 'results');
+        $total = data_get($raw, 'paging.total');
+        $reportedOffset = data_get($raw, 'paging.offset');
+        if (! is_array($rows) || (! is_int($total) && (! is_string($total) || ! ctype_digit($total)))
+            || (int) $total < 0 || (int) $total > 2147483647 || count($rows) > $limit
+            || ($reportedOffset !== null && ((! is_int($reportedOffset) && (! is_string($reportedOffset) || ! ctype_digit($reportedOffset)))
+                || (int) $reportedOffset !== $offset))
+            || ($rows === [] && $offset < (int) $total) || ($rows !== [] && $offset + count($rows) > (int) $total)) {
             throw new RuntimeException('Respuesta de búsqueda de pagos incompleta.');
         }
 
         $ids = [];
         foreach ($rows as $row) {
-            $id = (string) data_get($row, 'id');
-            if (! preg_match('/\A\d{1,64}\z/', $id)) {
+            $rawId = data_get($row, 'id');
+            if ((! is_int($rawId) && ! is_string($rawId)) || ! preg_match('/\A\d{1,64}\z/', (string) $rawId)) {
                 throw new RuntimeException('Identificador de pago inválido en búsqueda.');
             }
-            $ids[] = $id;
+            $ids[] = (string) $rawId;
         }
 
         $next = $offset + count($rows);

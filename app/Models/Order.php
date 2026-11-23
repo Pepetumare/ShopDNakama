@@ -71,11 +71,22 @@ class Order extends Model
         return $this->hasOne(CustomPaymentIntent::class);
     }
 
+    public function catalogPaymentCursor(): HasOne
+    {
+        return $this->hasOne(CatalogPaymentCursor::class);
+    }
+
     // For the final URL decision callers hold the order lock and lock the observed payments too.
     public function hasCustomPaymentHold(bool $lock = false): bool
     {
         if (! $this->custom_request_id) {
             return false;
+        }
+        // Discovered IDs awaiting a valid detail response cannot authorize another payment link.
+        $unverified = CatalogPaymentWork::where('order_id', $this->id)
+            ->where(fn ($work) => $work->whereNull('last_http')->orWhere('last_http', '!=', 200));
+        if ($lock ? $unverified->lockForUpdate()->get()->isNotEmpty() : $unverified->exists()) {
+            return true;
         }
         $payments = $this->paymentTransactions()->blocksCustomCheckout()->orderBy('id');
 

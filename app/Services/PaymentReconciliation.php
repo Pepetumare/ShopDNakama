@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\CatalogPaymentPage;
+use App\Models\CatalogPaymentWork;
 use App\Models\CheckoutAttempt;
 use App\Models\CustomPaymentIntent;
 use App\Models\CustomRequest;
@@ -23,26 +25,34 @@ class PaymentReconciliation
         private StockReservations $reservations,
     ) {}
 
-    public function verify(string $id, string $source, string $correlation, ?Order $expected = null, ?int $actor = null, bool $recoverCustom = true): array
+    public function verify(string $id, string $source, string $correlation, ?Order $expected = null, ?int $actor = null, bool $recoverCustom = true, ?\Closure $authorize = null): array
     {
         abort_unless(preg_match('/\A\d{1,64}\z/', $id), 422);
         try {
             $payment = $this->provider->getPayment($id);
         } catch (\Throwable $exception) {
-            $known = PaymentTransaction::where('provider', 'mercadopago')->where('provider_payment_id', $id)
-                ->when($expected, fn ($query) => $query->where('order_id', $expected->id))->first();
-            $retryOrder = $expected ?? $known?->order;
-            if ($retryOrder?->custom_request_id) {
-                app(CustomPaymentRecovery::class)->locked($retryOrder, function (Order $locked, CustomPaymentIntent $intent) {
-                    app(CustomPaymentRecovery::class)->requireFinancialReview($intent, 'provider_error');
-                    $intent->update(['financial_review_token' => (string) Str::uuid()]);
-                });
-            }
-            $this->record($source, $correlation, 'provider_error', $expected, $known, $id, $actor);
+            DB::transaction(function () use ($authorize, $id, $expected, $source, $correlation, $actor) {
+                if ($authorize && ! $authorize()) {
+                    return;
+                }
+                $known = PaymentTransaction::where('provider', 'mercadopago')->where('provider_payment_id', $id)
+                    ->when($expected, fn ($query) => $query->where('order_id', $expected->id))->first();
+                $retryOrder = $expected ?? $known?->order;
+                if ($retryOrder?->custom_request_id) {
+                    app(CustomPaymentRecovery::class)->locked($retryOrder, function (Order $locked, CustomPaymentIntent $intent) {
+                        app(CustomPaymentRecovery::class)->requireFinancialReview($intent, 'provider_error');
+                        $intent->update(['financial_review_token' => (string) Str::uuid()]);
+                    });
+                }
+                $this->record($source, $correlation, 'provider_error', $expected, $known, $id, $actor);
+            }, 3);
             throw $exception;
         }
 
-        $result = DB::transaction(function () use ($id, $payment, $source, $correlation, $expected, $actor) {
+        $result = DB::transaction(function () use ($id, $payment, $source, $correlation, $expected, $actor, $authorize) {
+            if ($authorize && ! $authorize()) {
+                return ['http' => 409, 'result' => 'review_superseded'];
+            }
             $candidate = is_string($payment['external_reference'] ?? null)
                 ? Order::where('number', $payment['external_reference'])->first() : null;
             $custom = $candidate?->custom_request_id
@@ -173,7 +183,7 @@ class PaymentReconciliation
                 try {
                     app(CustomPaymentRecovery::class)->recover($order, $this->provider, $source, $actor, $payment['preference_id'] ?? null);
                     if ($order->fresh()->mercadopago_preference_id) {
-                        return $this->verify($id, $source, $correlation, $expected, $actor, false);
+                        return $this->verify($id, $source, $correlation, $expected, $actor, false, $authorize);
                     }
                 } catch (\Throwable) {
                     // Sending/uncertain intent and financial evidence remain durable for the next review.
@@ -348,85 +358,10 @@ class PaymentReconciliation
     public function reviewOrder(Order $order, string $source, ?int $actor = null, int $offset = 0): array
     {
         abort_unless($order->payment_method === 'mercadopago', 422);
-        $correlation = (string) Str::uuid();
-        $lock = Cache::lock('mercadopago-reconciliation-order:'.$order->id, 180);
-        if (! $lock->get()) {
-            $this->record($source, $correlation, 'review_in_progress', $order, actor: $actor);
 
-            return ['outcome' => 'review_in_progress', 'next' => null];
-        }
-        try {
-            if ($order->custom_request_id) {
-                $financialToken = $this->beginCustomReview($order);
-            }
-            if ($offset === 0 || $order->custom_request_id) {
-                $this->recoverPreference($order, $source, $correlation, $actor);
-            }
-            $searchFailed = false;
-            try {
-                $search = $this->provider->searchPayments($order, $offset);
-            } catch (\Throwable) {
-                $this->record($source, $correlation, 'search_error', $order, actor: $actor);
-                $search = ['ids' => [], 'next' => null];
-                $searchFailed = true;
-            }
-            $ids = $search['ids'];
-            if (! $searchFailed) {
-                $this->record($source, $correlation, $ids === [] ? 'search_empty' : 'search_found', $order, actor: $actor);
-            }
-            // A legacy ID can still be checked directly outside the provider's search window.
-            if ($offset === 0) {
-                if (filled($order->mercadopago_payment_id)) {
-                    $ids[] = $order->mercadopago_payment_id;
-                }
-                $ids = array_values(array_unique($ids));
-                if (count($ids) < 11) {
-                    $known = $order->paymentTransactions()->whereNull('resolved_at')
-                        ->where(fn ($query) => $query->whereNotNull('incident')
-                            ->orWhereNotNull('custom_payment_intent_id')
-                            ->orWhereIn('provider_status', ['pending', 'in_process', 'authorized', 'in_mediation']))
-                        ->whereNotIn('provider_payment_id', $ids)->orderBy('last_verified_at')->orderBy('id')
-                        ->limit(11 - count($ids))->pluck('provider_payment_id')->all();
-                    $ids = array_merge($ids, $known);
-                }
-            }
-            $failed = false;
-            $verified = 0;
-            foreach (array_unique($ids) as $id) {
-                try {
-                    $result = $this->verify((string) $id, $source, $correlation, $order, $actor);
-                    $failed = $failed || $result['http'] !== 200 || ($order->custom_request_id && $result['result'] === 'held_for_review');
-                    $verified += $result['http'] === 200 ? 1 : 0;
-                } catch (\Throwable) {
-                    $failed = true;
-                }
-            }
-
-            $outcome = match (true) {
-                $searchFailed => 'search_error',
-                $failed => 'review_incomplete',
-                $ids === [] => 'search_empty',
-                default => 'reviewed',
-            };
-            if ($order->custom_request_id) {
-                $this->finishCustomReview($order, $outcome, $verified, ! $searchFailed && ! $failed && $search['next'] === null, $financialToken);
-            }
-
-            return ['outcome' => $outcome, 'next' => $search['next']];
-        } finally {
-            $lock->release();
-        }
-    }
-
-    private function beginCustomReview(Order $order): string
-    {
-        return app(CustomPaymentRecovery::class)->locked($order, function (Order $locked, CustomPaymentIntent $intent) {
-            $token = (string) Str::uuid();
-            $intent->update(['financial_review_required' => true, 'financial_reviewed_at' => now(),
-                'financial_next_review_at' => now()->addHours(2), 'financial_review_outcome' => 'review_started', 'financial_review_token' => $token]);
-
-            return $token;
-        });
+        return app(CatalogPaymentReconciliation::class)->review($order, $source, $actor,
+            fn (string $id, string $correlation, \Closure $authorize) => $this->verify($id, $source, $correlation, $order, $actor, authorize: $authorize),
+            fn (string $correlation) => $this->recoverPreference($order, $source, $correlation, $actor));
     }
 
     private function finishCustomReview(Order $order, string $outcome, int $verified, bool $complete, string $token): void
@@ -440,7 +375,11 @@ class PaymentReconciliation
                 ->orWhereNotIn('provider_status', ['approved', 'rejected', 'cancelled', 'refunded', 'charged_back']))->exists();
             $unapplied = $locked->paymentTransactions()->unappliedCustomApproval()->exists();
             // Empty searches are not evidence that all financial work has finished.
-            $required = ! $complete || $verified === 0 || $open || $unapplied || $intent->state !== CustomPaymentIntent::READY;
+            $durablePending = $locked->catalogPaymentCursor()->where('scan_open', true)->exists()
+                || CatalogPaymentPage::where('order_id', $locked->id)->where('state', 'pending')->exists()
+                || CatalogPaymentWork::where('order_id', $locked->id)
+                    ->where(fn ($work) => $work->whereNull('last_http')->orWhere('last_http', '!=', 200))->exists();
+            $required = ! $complete || $verified === 0 || $open || $unapplied || $durablePending || $intent->state !== CustomPaymentIntent::READY;
             $intent->update(['financial_review_required' => $required, 'financial_review_outcome' => $outcome,
                 'financial_next_review_at' => $required ? now()->addHours(2) : null]);
         });
@@ -565,19 +504,27 @@ class PaymentReconciliation
                     ->orWhereHas('paymentTransactions', fn ($payment) => $payment->unappliedCustomApproval())
                     ->orWhere(fn ($legacy) => $legacy->whereNotNull('custom_request_id')->whereNull('mercadopago_preference_id')
                         ->whereNotExists(fn ($intent) => $intent->selectRaw('1')->from('custom_payment_intents')->whereColumn('order_id', 'orders.id')))
-                    ->orWhere(fn ($recent) => $recent->whereNotNull('mercadopago_preference_id')->where('created_at', '>=', now()->subDays(7)));
+                    ->orWhere(fn ($recent) => $recent->whereNotNull('mercadopago_preference_id')->where('created_at', '>=', now()->subDays(7)))
+                    ->orWhere(fn ($catalog) => $catalog->whereNull('custom_request_id')->where(fn ($work) => $work
+                        ->whereNotNull('mercadopago_preference_id')->orWhereNotNull('mercadopago_payment_id')
+                        ->orWhereHas('catalogPaymentCursor')->orWhereHas('paymentTransactions')
+                        ->orWhereExists(fn ($attempt) => $attempt->selectRaw('1')->from('checkout_attempts')
+                            ->whereColumn('order_id', 'orders.id')->whereIn('state', [CheckoutAttempt::SENDING, CheckoutAttempt::UNCERTAIN]))));
             })->whereDoesntHave('customPaymentIntent', fn ($intent) => $intent->where('financial_next_review_at', '>', now()))
-            ->whereNotExists(fn ($events) => $events->selectRaw('1')->from('payment_reconciliation_events')
-                ->whereColumn('order_id', 'orders.id')->where('source', 'scheduler')->where('created_at', '>=', $cutoff))
+            ->where(fn ($due) => $due
+                ->where(fn ($custom) => $custom->whereNotNull('custom_request_id')->whereDoesntHave('catalogPaymentCursor')
+                    ->whereNotExists(fn ($events) => $events->selectRaw('1')->from('payment_reconciliation_events')
+                        ->whereColumn('order_id', 'orders.id')->where('source', 'scheduler')->where('created_at', '>=', $cutoff)))
+                ->orWhere(fn ($catalog) => $catalog->where(fn ($type) => $type->whereNull('custom_request_id')->orWhereHas('catalogPaymentCursor'))
+                    ->whereDoesntHave('catalogPaymentCursor', fn ($cursor) => $cursor
+                        ->where('next_run_at', '>', now())->orWhere('lease_expires_at', '>', now()))))
             ->orderBy('last_reconciliation_check')->orderBy('id')->limit(5)->get();
 
         foreach ($orders as $order) {
-            $offset = $order->custom_request_id ? (int) $order->customPaymentIntent?->payment_offset : 0;
-            $result = $this->reviewOrder($order, 'scheduler', offset: $offset);
-            if ($order->custom_request_id && ! in_array($result['outcome'], ['search_error', 'review_in_progress'], true)) {
-                app(CustomPaymentRecovery::class)->locked($order, function (Order $locked, CustomPaymentIntent $intent) use ($result) {
-                    $intent->update(['payment_offset' => $result['next'] ?? 0]);
-                });
+            try {
+                $this->reviewOrder($order, 'scheduler');
+            } catch (\Throwable) {
+                $this->record('scheduler', (string) Str::uuid(), 'review_error', $order);
             }
         }
 
