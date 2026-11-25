@@ -3,6 +3,7 @@
 use App\Models\Order;
 use App\Services\MercadoPagoService;
 use App\Services\PaymentReconciliation;
+use App\Services\StockReservations;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -33,7 +34,7 @@ $provider = new class($order, $argv[3] ?? null) extends MercadoPagoService
 
         return ['id' => $id, 'status' => 'approved', 'amount' => $this->order->total, 'currency' => 'CLP',
             'preference_id' => $this->order->mercadopago_preference_id, 'external_reference' => $this->order->number,
-            'updated_at' => '2026-11-01T12:00:00.125Z'];
+            'approved_at' => now()->subMinutes(45)->toIso8601String(), 'updated_at' => '2026-11-01T12:00:00.125Z'];
     }
 
     public function searchPayments(Order $order, int $offset): array
@@ -67,6 +68,14 @@ DB::connection()->beforeExecuting(function (string $query) {
         flush();
     }
 });
+
+if (in_array($argv[2], ['release', 'recover'], true)) {
+    echo "starting-recovery\n";
+    flush();
+    $result = app(StockReservations::class)->recover($order);
+    echo 'released='.$result['released']."\n";
+    exit($argv[2] === 'recover' || $result['released'] === 0 ? 0 : 4);
+}
 
 $result = $service->verify($argv[2], 'webhook', (string) Str::uuid());
 echo $result['result']."\n";

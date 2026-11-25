@@ -8,9 +8,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class CheckoutAttempt extends Model
 {
     public const DRAFT = 'draft';
+
     public const SENDING = 'sending';
+
     public const UNCERTAIN = 'reconciliation_required';
+
     public const READY = 'ready';
+
+    public const NOT_SENT = 'not_sent';
+
     public const FAILED = 'failed';
 
     protected $guarded = ['id'];
