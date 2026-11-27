@@ -1,2 +1,30 @@
 @php($navigationCategories = \App\Models\Category::storefront()->orderBy('sort_order')->orderBy('name')->get())
-<footer class="shop-footer" id="contacto"><div class="shop-container footer-grid"><div class="footer-brand"><a href="{{ route('home') }}"><x-store.art :x="30" :y="42" :w="113" :h="113" label="Shop D. Nakama"/><strong>SHOP D. NAKAMA</strong></a><p>Anime · Manga · Figuras · Merch · Cultura Geek<br>Más que una tienda, somos una comunidad de nakamas.<br>Productos que conectan con tus pasiones.</p></div><div><h2>Enlaces</h2><div class="footer-links"><a href="{{ route('home') }}">Inicio</a><a href="{{ route('catalogo') }}">Catálogo</a>@foreach($navigationCategories as $category)<a href="{{ route('catalogo', ['categoria' => $category->slug]) }}">{{ $category->name }}</a>@endforeach<a href="{{ route('catalogo', ['categoria' => 'ofertas']) }}">Ofertas</a></div></div><div><h2>Información</h2><p>Envíos a todo Chile<br>Productos originales<br>Manga, figuras y accesorios<br>Hecho para verdaderos nakamas</p></div><div><h2>Contacto</h2><p><x-store.icon name="pin" size="18"/> Santiago, Chile</p><p>Para consultas sobre productos,<br>próximamente nuestros canales de atención.</p></div></div></footer>
+<footer class="shop-footer" id="contacto">
+    <div class="shop-container footer-grid">
+        <div class="footer-brand"><a href="{{ route('home') }}"><x-store.art :x="30" :y="42"
+                    :w="113" :h="113" label="Shop D. Nakama" /><strong>SHOP D. NAKAMA</strong></a>
+            <p>Anime · Manga · Figuras · Merch · Cultura Geek<br>Más que una tienda, somos una comunidad de
+                nakamas.<br>Productos que conectan con tus pasiones.</p>
+        </div>
+        <div>
+            <h2>Enlaces</h2>
+            <div class="footer-links"><a href="{{ route('home') }}">Inicio</a><a
+                    href="{{ route('catalogo') }}">Catálogo</a>
+                @foreach ($navigationCategories as $category)
+                    <a href="{{ route('catalogo', ['categoria' => $category->slug]) }}">{{ $category->name }}</a>
+                @endforeach
+                <a href="{{ route('catalogo', ['categoria' => 'ofertas']) }}">Ofertas</a>
+            </div>
+        </div>
+        <div>
+            <h2>Información</h2>
+            <p>Envíos a todo Chile<br>Productos originales<br>Manga, figuras y accesorios<br>Hecho para verdaderos
+                nakamas</p>
+        </div>
+        <div>
+            <h2>Contacto</h2>
+            <p><x-store.icon name="pin" size="18" /> Portal Mariquina, Local 8, San José de la Mariquina, Región de los Ríos.</p>
+            <p>Para consultas sobre productos,<br>próximamente nuestros canales de atención.</p>
+        </div>
+    </div>
+</footer>
