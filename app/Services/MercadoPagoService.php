@@ -68,6 +68,9 @@ class MercadoPagoService
             $options->setCustomHeaders(['X-Idempotency-Key: custom-order-'.$order->number]);
         }
         $reservation = $order->custom_request_id ? null : app(StockReservations::class)->rows($order)->first();
+        if ($reservation && ! $reservation->absolute_window) {
+            throw new RuntimeException('La ventana histórica de la reserva requiere verificación.');
+        }
         $validity = $reservation ? [
             'expires' => true,
             'expiration_date_from' => Carbon::parse($reservation->created_at)->toIso8601String(),
@@ -134,7 +137,7 @@ class MercadoPagoService
 
         $preference = $client->get($search->elements[0]->id);
         $reservation = app(StockReservations::class)->rows($order)->first();
-        if (! $reservation || ($preference->external_reference ?? null) !== $order->number
+        if (! $reservation || ! $reservation->absolute_window || ($preference->external_reference ?? null) !== $order->number
             || ($preference->id ?? null) !== $search->elements[0]->id || ($preference->expires ?? false) !== true
             || blank($preference->expiration_date_to ?? null)
             || ! Carbon::parse($preference->expiration_date_to)->equalTo(Carbon::parse($reservation->expires_at))

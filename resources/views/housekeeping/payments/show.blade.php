@@ -89,6 +89,9 @@
     <li>{{ $event->created_at }} · {{ $event->source }} · {{ $event->outcome }}
         @if($event->provider_payment_id) · Pago {{ $event->provider_payment_id }} @endif
         @if($event->actor_id) · Usuario {{ $event->actor_id }} @endif
+        @if($event->provider_date_evidence)
+            <details><summary>Fechas del proveedor que requieren revisión</summary><pre>{{ json_encode($event->provider_date_evidence, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) }}</pre></details>
+        @endif
         @if($event->note)<p>{{ $event->note }}</p>@endif
     </li>
 @empty

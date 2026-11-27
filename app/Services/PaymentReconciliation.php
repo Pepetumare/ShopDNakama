@@ -49,7 +49,7 @@ class PaymentReconciliation
             throw $exception;
         }
 
-        $result = DB::transaction(function () use ($id, $payment, $source, $correlation, $expected, $actor, $authorize) {
+        $result = FinancialDatabaseTime::transaction(function () use ($id, $payment, $source, $correlation, $expected, $actor, $authorize) {
             if ($authorize && ! $authorize()) {
                 return ['http' => 409, 'result' => 'review_superseded'];
             }
@@ -98,20 +98,26 @@ class PaymentReconciliation
             // Historical orders may lack a preference ID. Only their already-associated payment can be read.
             $historical = ! $order->mercadopago_preference_id && ! $awaiting && $order->mercadopago_payment_id === $id;
             if (! $order->mercadopago_preference_id && ! $awaiting && ! $historical) {
-                $this->record($source, $correlation, 'preference_unverified', $expected, id: $id, actor: $actor);
+                $this->record($source, $correlation, 'preference_unverified', $order, id: $id, actor: $actor);
 
                 return ['http' => 422, 'result' => 'preference_unverified', 'payment' => $details] + $before;
             }
 
-            $updated = $this->date($payment['updated_at'] ?? null);
-            $approved = $this->date($payment['approved_at'] ?? null);
+            $dateEvidence = [];
+            $updated = $this->providerTimestamp($payment, 'updated_at', $dateEvidence);
+            $approved = $this->providerTimestamp($payment, 'approved_at', $dateEvidence);
+            $dateIssue = match (true) {
+                isset($dateEvidence['approved_at']) => 'invalid_approval_date',
+                isset($dateEvidence['updated_at']) => 'invalid_provider_update_date',
+                default => null,
+            };
             $transaction = PaymentTransaction::where($key)->lockForUpdate()->first();
             if (! $transaction) {
                 DB::table('payment_transactions')->upsert([$key + [
                     'order_id' => $order->id, 'checkout_attempt_id' => $attempt?->id, 'custom_payment_intent_id' => $customIntent?->id, 'preference_id' => $preference,
                     'amount' => $amount, 'currency' => $currency, 'provider_status' => $status,
-                    'approved_at' => $approved, 'provider_updated_at' => $updated,
-                    'last_verified_at' => now(), 'correlation_id' => $correlation, 'created_at' => now(), 'updated_at' => now(),
+                    'approved_at' => $approved?->format('Y-m-d H:i:s.v'), 'provider_updated_at' => $updated?->format('Y-m-d H:i:s.v'),
+                    'last_verified_at' => now()->utc(), 'correlation_id' => $correlation, 'created_at' => now()->utc(), 'updated_at' => now()->utc(),
                 ]], ['provider', 'provider_payment_id'], ['provider_payment_id']);
                 $transaction = PaymentTransaction::where($key)->lockForUpdate()->firstOrFail();
             }
@@ -162,19 +168,27 @@ class PaymentReconciliation
                 } elseif ($historical) {
                     $outcome = 'historical_verified';
                 } else {
-                    $outcome = $this->apply($order, $custom, $transaction, $status);
+                    // Reclaim held units after expiry only with a linked, unambiguous provider timestamp.
+                    $linked = filled($preference) && $preference === $order->mercadopago_preference_id;
+                    $openDateIssue = ! $transaction->resolved_at && in_array($transaction->incident, ['invalid_approval_date', 'invalid_provider_update_date'], true);
+                    $outcome = $this->apply($order, $custom, $transaction, $status, $linked ? $approved : null,
+                        $dateIssue ?? ($openDateIssue ? $transaction->incident : null));
                 }
             }
-            $transaction->fill(['last_verified_at' => now(), 'correlation_id' => $correlation])->save();
+            if ($dateIssue !== null) {
+                $this->flag($transaction, $dateIssue);
+                $transaction->resolved_at = null;
+            }
+            $transaction->fill(['last_verified_at' => now()->utc(), 'correlation_id' => $correlation])->save();
             if ($customIntent && ($http !== 200 || $outcome === 'held_for_review' || ($transaction->incident && ! $transaction->resolved_at)
                 || ! in_array($transaction->provider_status, ['approved', 'rejected', 'cancelled', 'refunded', 'charged_back'], true))) {
                 app(CustomPaymentRecovery::class)->requireFinancialReview($customIntent, $outcome);
             }
-            $this->record($source, $correlation, $outcome, $order, $transaction, $id, $actor, $status);
+            $this->record($source, $correlation, $outcome, $order, $transaction, $id, $actor, $status, dateEvidence: $dateEvidence);
 
             return ['http' => $http, 'result' => $outcome, 'payment' => $details,
                 'payment_status_after' => $order->payment_status, 'order_status_after' => $order->status] + $before;
-        }, 3);
+        });
         // Preserve the verified financial observation before any recovery HTTP request.
         // Re-read the payment after association, never synthesize paid from the preference.
         if ($recoverCustom && $result['result'] === 'awaiting_preference' && $result['order_id']) {
@@ -194,7 +208,7 @@ class PaymentReconciliation
         return $result;
     }
 
-    private function apply(Order $order, ?CustomRequest $custom, PaymentTransaction $transaction, string $status): string
+    private function apply(Order $order, ?CustomRequest $custom, PaymentTransaction $transaction, string $status, ?Carbon $approvedAt, ?string $dateIssue): string
     {
         $id = $transaction->provider_payment_id;
         $paid = in_array($order->payment_status, ['paid', 'pagado'], true);
@@ -230,7 +244,7 @@ class PaymentReconciliation
 
         $order->forceFill(['mercadopago_payment_id' => $id, 'payment_status' => $mapped]);
         if ($mapped === 'paid') {
-            $issue = $this->approvalIssue($order, $custom);
+            $issue = $dateIssue ?? $this->approvalIssue($order, $custom, $approvedAt);
             if ($issue !== null) {
                 $this->flag($transaction, $issue);
                 $order->fulfillment_issue = 'Pago confirmado: revisar reserva, stock o cancelación antes de preparar o reembolsar.';
@@ -251,16 +265,20 @@ class PaymentReconciliation
         return 'updated';
     }
 
-    private function approvalIssue(Order $order, ?CustomRequest $custom): ?string
+    private function approvalIssue(Order $order, ?CustomRequest $custom, ?Carbon $approvedAt): ?string
     {
         if ($order->status === 'cancelado'
             || ($custom && ! in_array($custom->status, ['quoted', 'approved', 'in_production', 'ready', 'completed'], true))) {
             return 'cancelled_order';
         }
-        if ($this->stock->deductOrder($order)) {
+        if ($this->stock->deductOrder($order, $approvedAt)) {
             return null;
         }
-        if ($this->reservations->rows($order, lock: true)->contains(fn ($row) => ! $this->reservations->isCurrent($row))) {
+        $rows = $this->reservations->rows($order, lock: true);
+        if ($rows->contains(fn ($row) => ! $row->absolute_window)) {
+            return 'unverified_reservation_window';
+        }
+        if ($rows->contains(fn ($row) => ! $this->reservations->isCurrent($row))) {
             return 'late_payment';
         }
 
@@ -269,8 +287,10 @@ class PaymentReconciliation
 
     private function stale(PaymentTransaction $transaction, ?Carbon $updated, string $status): bool
     {
-        if ($updated && $transaction->provider_updated_at && ! $updated->equalTo($transaction->provider_updated_at)) {
-            return $updated->lt($transaction->provider_updated_at);
+        $stored = $transaction->getRawOriginal('provider_updated_at');
+        $previous = $stored === null ? null : Carbon::parse($stored, 'UTC');
+        if ($updated && $previous && ! $updated->copy()->floorMillisecond()->equalTo($previous)) {
+            return $updated->lt($previous);
         }
         $rank = fn ($state) => match ($state) {
             'refunded', 'charged_back' => 3, 'approved' => 2, 'rejected', 'cancelled' => 1, default => 0,
@@ -279,16 +299,39 @@ class PaymentReconciliation
         return $rank($status) < $rank($transaction->provider_status);
     }
 
-    private function date(mixed $date): ?Carbon
+    private function providerTimestamp(array $payment, string $field, array &$evidence): ?Carbon
     {
-        if (! is_string($date) || ! preg_match('/\A\d{4}-\d{2}-\d{2}T/', $date)) {
+        $value = $payment[$field] ?? null;
+        if ($value === null) {
             return null;
         }
-        try {
-            return Carbon::parse($date)->setTimezone(config('app.timezone'));
-        } catch (\Exception) {
+
+        $instant = $this->parseProviderInstant($value);
+        // On MariaDB 10.11 the first storable TIMESTAMP(3) is epoch + 1 ms.
+        if ($instant && $instant->gte('1970-01-01T00:00:00.001Z') && $instant->lt('2038-01-19T03:14:08Z')) {
+            return $instant;
+        }
+
+        $evidence[$field] = ['value' => $value, 'reason' => $instant ? 'outside_sql_range' : 'invalid_format'];
+
+        return null;
+    }
+
+    private function parseProviderInstant(mixed $value): ?Carbon
+    {
+        if (! is_string($value) || ! preg_match(
+            '/\A([0-9]{4})-([0-9]{2})-([0-9]{2})T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\.([0-9]+))?(Z|[+-](?:(?:0[0-9]|1[0-3]):[0-5][0-9]|14:00))\z/',
+            $value, $parts
+        ) || ! checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1]) || $parts[5] === '-00:00') {
             return null;
         }
+
+        // Reservation boundaries are whole seconds. Flooring sub-microsecond digits keeps the exclusive end exact.
+        $micros = str_pad(substr($parts[4], 0, 6), 6, '0');
+        $zone = $parts[5] === 'Z' ? '+00:00' : $parts[5];
+
+        return Carbon::createFromFormat('!Y-m-d\TH:i:s.uP', substr($value, 0, 19).'.'.$micros.$zone)
+            ->utc();
     }
 
     private function flag(PaymentTransaction $transaction, string $incident): void
@@ -297,11 +340,15 @@ class PaymentReconciliation
     }
 
     private function record(string $source, string $correlation, string $outcome, ?Order $order = null,
-        ?PaymentTransaction $transaction = null, ?string $id = null, ?int $actor = null, ?string $status = null, ?string $note = null): void
+        ?PaymentTransaction $transaction = null, ?string $id = null, ?int $actor = null, ?string $status = null, ?string $note = null, array $dateEvidence = []): void
     {
-        PaymentReconciliationEvent::create(['source' => $source, 'correlation_id' => $correlation, 'outcome' => $outcome,
+        $event = new PaymentReconciliationEvent(['source' => $source, 'correlation_id' => $correlation, 'outcome' => $outcome,
             'order_id' => $order?->id, 'payment_transaction_id' => $transaction?->id, 'provider_payment_id' => $id,
             'actor_id' => $actor, 'provider_status' => $status, 'note' => $note]);
+        if ($dateEvidence !== []) {
+            $event->provider_date_evidence = $dateEvidence;
+        }
+        $event->save();
     }
 
     public function annotate(PaymentTransaction $payment, int $actor, string $note, bool $resolve): void
