@@ -1320,16 +1320,3 @@ min-height:0}
 @media (max-width: 767px) {
     .store-whatsapp { width: 54px; height: 54px; }
 }
-
-/* Reserve the contact strip while the storefront scrolls above it. */
-html:has(.store-whatsapp) { overflow: hidden; }
-body:has(.store-whatsapp) {
-    height: calc(100dvh - 86px - env(safe-area-inset-bottom, 0px));
-    overflow-y: auto;
-}
-.store-whatsapp svg { stroke: #12412a; stroke-width: .8; paint-order: stroke fill; }
-@media (max-width: 767px) {
-    body:has(.store-whatsapp) {
-        height: calc(100dvh - 80px - env(safe-area-inset-bottom, 0px));
-    }
-}
