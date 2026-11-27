@@ -23,6 +23,13 @@ class CustomPreviewTest extends StoreTestCase
         return array_merge(['version' => 1, 'side' => 'front', 'x' => 0.5, 'y' => 0.28, 'scale' => 0.35, 'rotation' => 0, 'color' => 'neutral', 'file_index' => 0], $extra);
     }
 
+    private function assertPreview(array $expected, array $actual): void
+    {
+        ksort($expected);
+        ksort($actual);
+        $this->assertSame($expected, $actual);
+    }
+
     private function payload(array $extra = []): array
     {
         return array_merge(['product_type' => 'badges', 'quantity' => 2, 'attachments' => [UploadedFile::fake()->image('original.png', 200, 100)], 'preview_data' => $this->preview()], $extra);
@@ -34,7 +41,7 @@ class CustomPreviewTest extends StoreTestCase
         $bytes = file_get_contents($payload['attachments'][0]->getRealPath());
         $this->post('/personalizados', $payload)->assertSessionHasNoErrors()->assertRedirect();
         $request = CustomRequest::firstOrFail();
-        $this->assertSame($this->preview(), $request->preview_data);
+        $this->assertPreview($this->preview(), $request->preview_data);
         $this->assertNull($request->size);
         $file = $request->files->first();
         $this->assertSame($bytes, Storage::disk('custom_orders')->get($file->stored_path));
@@ -161,7 +168,7 @@ class CustomPreviewTest extends StoreTestCase
                     $preview = $this->shirtPreview(['color' => $color, 'orientation' => $orientation, 'side' => $side]);
                     $this->post('/personalizados', $this->payload(['product_type' => $type, 'size' => 'M', 'print_position' => $side === 'front' ? 'Delantera' : 'Trasera', 'preview_data' => $preview]))->assertSessionHasNoErrors();
                     $request = CustomRequest::latest('id')->firstOrFail();
-                    $this->assertSame($preview, $request->preview_data);
+                    $this->assertPreview($preview, $request->preview_data);
                     $this->get(route('account.custom-requests.show', $request))->assertOk()->assertSee($orientation === 'vertical' ? 'Vertical' : 'Horizontal')->assertSee($side === 'front' ? 'Frontal' : 'Espalda')->assertSee('Manual');
                 }
             }
@@ -190,7 +197,7 @@ class CustomPreviewTest extends StoreTestCase
             $this->post('/personalizados', $this->payload(['product_type' => $type, 'variant' => 'white', 'size' => 'M', 'print_position' => 'Delantera', 'preview_data' => $preview]))->assertSessionHasNoErrors();
             $request = CustomRequest::latest('id')->firstOrFail();
             $this->get(route('account.custom-requests.show', $request))->assertOk()->assertSee('Tu vista previa')->assertSee('28%')->assertDontSee('Vista previa panorámica')->assertDontSee('Orientación del estampado');
-            $this->assertSame($preview, $request->fresh()->preview_data);
+            $this->assertPreview($preview, $request->fresh()->preview_data);
         }
     }
 

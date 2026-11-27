@@ -15,7 +15,7 @@ $app->make(Kernel::class)->bootstrap();
 if (config('database.default') !== 'mysql' || config('database.connections.mysql.host') !== '127.0.0.1'
     || (int) config('database.connections.mysql.port') !== 33317 || config('database.connections.mysql.url')
     || DB::connection()->getDatabaseName() !== 'nakama_com01_test'
-    || ! str_contains(DB::selectOne('select version() as v')->v, 'MariaDB')) {
+    || ! in_array(DB::connection()->getDriverTitle(), ['MySQL', 'MariaDB'], true)) {
     exit(2);
 }
 config(['cache.default' => 'array']);

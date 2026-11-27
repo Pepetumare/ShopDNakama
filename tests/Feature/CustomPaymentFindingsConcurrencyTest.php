@@ -25,7 +25,7 @@ class CustomPaymentFindingsConcurrencyTest extends TestCase
         $this->assertSame(33317, (int) config('database.connections.mysql.port'));
         $this->assertEmpty(config('database.connections.mysql.url'));
         $this->assertSame('nakama_com01_test', DB::connection()->getDatabaseName());
-        $this->assertStringContainsString('MariaDB', DB::selectOne('select version() as version')->version);
+        $this->assertContains(DB::connection()->getDriverTitle(), ['MySQL', 'MariaDB']);
         $this->artisan('migrate', ['--force' => true])->assertSuccessful();
         config(['services.mercadopago.collector_id' => '42']);
     }

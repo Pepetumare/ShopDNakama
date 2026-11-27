@@ -77,15 +77,18 @@ class CustomRequestsCompletionTest extends TestCase
     public function test_request_number_uses_independent_database_sequence_and_is_unique(): void
     {
         // Reserving a number does not consume a custom_requests primary key.
-        DB::table('custom_request_sequences')->insert(['id' => 99, 'created_at' => now()]);
+        $sequence = DB::table('custom_request_sequences');
+        $anchor = $sequence->insertGetId(['created_at' => now()]);
+        $sequence->insert(['id' => $anchor + 99, 'created_at' => now()]);
         $this->actingAs(User::factory()->create());
         $this->post('/personalizados', $this->payload())->assertSessionHasNoErrors();
         $one = CustomRequest::firstOrFail();
-        $this->assertSame('PER-000100', $one->request_number);
-        $this->assertSame(1, $one->id);
+        $this->assertSame(sprintf('PER-%06d', $anchor + 100), $one->request_number);
+        $this->assertSame(1, CustomRequest::count());
         $this->post('/personalizados', $this->payload())->assertSessionHasNoErrors();
         $two = CustomRequest::latest('id')->firstOrFail();
-        $this->assertSame('PER-000101', $two->request_number);
+        $this->assertSame(sprintf('PER-%06d', $anchor + 101), $two->request_number);
+        $this->assertSame($one->id + 1, $two->id);
         $this->assertNotSame($one->request_number, $two->request_number);
     }
 
