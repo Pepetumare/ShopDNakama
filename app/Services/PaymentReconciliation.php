@@ -11,6 +11,7 @@ use App\Models\Order;
 use App\Models\PaymentReconciliationEvent;
 use App\Models\PaymentTransaction;
 use App\Models\User;
+use Illuminate\Database\MySqlConnection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -131,7 +132,8 @@ class PaymentReconciliation
 
             $outcome = 'verified';
             $http = $awaiting ? 503 : 200;
-            $stale = $this->stale($transaction, $updated, $status);
+            $observedUpdate = $updated ?? $this->parseProviderInstant($payment['updated_at'] ?? null);
+            $stale = $this->stale($transaction, $observedUpdate, $status);
             $approvalRegression = ! in_array($order->payment_status, ['paid', 'pagado', 'refunded', 'reembolsado'], true)
                 && ($transaction->provider_status === 'approved' || $transaction->approved_at)
                 && ! in_array($status, ['approved', 'refunded', 'charged_back'], true);
@@ -175,7 +177,10 @@ class PaymentReconciliation
                         $dateIssue ?? ($openDateIssue ? $transaction->incident : null));
                 }
             }
-            if ($dateIssue !== null) {
+            if ($stale && isset($dateEvidence['updated_at'])) {
+                $dateEvidence['updated_at']['stale'] = true;
+            }
+            if (! $stale && $dateIssue !== null) {
                 $this->flag($transaction, $dateIssue);
                 $transaction->resolved_at = null;
             }
@@ -289,12 +294,33 @@ class PaymentReconciliation
     {
         $stored = $transaction->getRawOriginal('provider_updated_at');
         $previous = $stored === null ? null : Carbon::parse($stored, 'UTC');
-        if ($updated && $previous && ! $updated->copy()->floorMillisecond()->equalTo($previous)) {
+        // Preserve ordering even when the provider instant could only be stored as event evidence.
+        $event = PaymentReconciliationEvent::where('payment_transaction_id', $transaction->id)
+            ->where('provider_date_evidence->updated_at->reason', 'outside_sql_range')
+            ->whereNull('provider_date_evidence->updated_at->stale')
+            ->where('outcome', '!=', 'stale_snapshot')->latest('id')->first();
+        $observed = $this->parseProviderInstant($event?->provider_date_evidence['updated_at']['value'] ?? null);
+        if (in_array($transaction->provider_status, ['refunded', 'charged_back'], true)
+            && ! in_array($status, ['refunded', 'charged_back'], true)) {
+            return true;
+        }
+        if ($observed && (! $previous || $observed->gt($previous))) {
+            $previous = $observed;
+        } else {
+            // The SQL column retains only milliseconds.
+            $updated = $updated?->copy()->floorMillisecond();
+        }
+        if ($updated && $previous && ! $updated->equalTo($previous)) {
             return $updated->lt($previous);
         }
         $rank = fn ($state) => match ($state) {
             'refunded', 'charged_back' => 3, 'approved' => 2, 'rejected', 'cancelled' => 1, default => 0,
         };
+
+        // A different terminal label requires a demonstrably newer observation.
+        if ($rank($status) === 3 && $rank($transaction->provider_status) === 3 && $status !== $transaction->provider_status) {
+            return true;
+        }
 
         return $rank($status) < $rank($transaction->provider_status);
     }
@@ -307,8 +333,11 @@ class PaymentReconciliation
         }
 
         $instant = $this->parseProviderInstant($value);
-        // On MariaDB 10.11 the first storable TIMESTAMP(3) is epoch + 1 ms.
-        if ($instant && $instant->gte('1970-01-01T00:00:00.001Z') && $instant->lt('2038-01-19T03:14:08Z')) {
+        // TIMESTAMP(3) writes use format "v", truncating before the upper bound.
+        $connection = DB::connection();
+        $minimum = $connection instanceof MySqlConnection && ! $connection->isMaria()
+            ? '1970-01-01T00:00:01Z' : '1970-01-01T00:00:00.001Z';
+        if ($instant && $instant->gte($minimum) && $instant->lt('2038-01-19T03:14:08Z')) {
             return $instant;
         }
 

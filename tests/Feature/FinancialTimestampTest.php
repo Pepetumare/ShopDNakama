@@ -7,6 +7,7 @@ use App\Models\PaymentReconciliationEvent;
 use App\Services\MercadoPagoService;
 use App\Services\PaymentReconciliation;
 use App\Services\StockReservations;
+use Illuminate\Database\MySqlConnection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -158,14 +159,31 @@ class FinancialTimestampTest extends StoreTestCase
     #[TestWith(['1970-01-01T00:00:00Z', null])]
     public function test_provider_update_sql_range(string $updated, ?string $stored): void
     {
+        // MariaDB 10.11 can store epoch + 1 ms; MySQL 8.4 starts at epoch + 1 s.
+        if ($stored === '1970-01-01 00:00:00.001' && DB::connection() instanceof MySqlConnection
+            && ! DB::connection()->isMaria()) {
+            $stored = null;
+        }
         $order = $this->reserve();
         $this->observe($order, 'approved', now()->toIso8601String(), $updated);
         $tx = $order->paymentTransactions()->sole();
+        $this->assertSame((string) $order->id, $tx->provider_payment_id);
+        $this->assertSame($tx->provider_payment_id, $order->mercadopago_payment_id);
+        $this->assertSame('approved', $tx->provider_status);
         $this->assertSame('paid', $order->payment_status);
         $this->assertSame($stored, $tx->provider_updated_at?->format('Y-m-d H:i:s.v'));
         $this->assertSame($stored ? null : 'invalid_provider_update_date', $tx->incident);
         $this->assertSame($stored !== null, $order->fulfillment_issue === null);
         $this->assertDatabaseCount('stock_movements', $stored ? 2 : 0);
+        if ($stored === null) {
+            $event = PaymentReconciliationEvent::where('payment_transaction_id', $tx->id)->latest('id')->firstOrFail();
+            $this->assertSame($updated, $event->provider_date_evidence['updated_at']['value']);
+            $this->assertSame('outside_sql_range', $event->provider_date_evidence['updated_at']['reason']);
+            $this->assertNull($tx->resolved_at);
+            $this->assertSame(2, DB::table('stock_reservations')->where('order_id', $order->id)->where('status', 'active')->count());
+            $this->expectException(ValidationException::class);
+            $order->assertFulfillable();
+        }
     }
 
     public function test_mysql_connectors_restore_utc_on_reconnection(): void
