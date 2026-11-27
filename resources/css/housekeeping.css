@@ -1,6 +1,25 @@
 @import url('https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;500;600;700;800&display=swap');
 
 :root{--hk-green:#087a2f;--hk-dark:#14231a;--hk-red:#d72a34;--hk-line:#e1e6e2;--hk-muted:#627067}
+.hk-collection-form + .hk-collection-form {
+    margin-block-start: 1.25rem;
+}
+.hk-collection-volume + .hk-collection-volume {
+    margin-block-start: 1rem;
+    padding-block-start: 1rem;
+    border-block-start: 1px solid var(--hk-line);
+}
+.hk-collection-volume h3 {
+    margin-block: 0 .375rem;
+}
+.hk-collection-volume > p {
+    margin-block: 0 .75rem;
+}
+.hk-collection-volume .hk-form-actions {
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
 .hk-stock-heading{margin-top:32px!important}.hk-stock-image{width:100%;height:150px;object-fit:contain}.hk-status-form summary{cursor:pointer}
 *{box-sizing:border-box}
 body{margin:0;font-family:'Roboto Condensed',Arial,sans-serif;color:#17231b;background:#f3f5f3;font-size:15px}

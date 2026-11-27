@@ -2,6 +2,44 @@
 
 @import './vendor/bootstrap.min.css';
 
+.manga-volumes {
+    margin-block: 1rem;
+    min-inline-size: 0;
+}
+.manga-volumes legend {
+    font-size: 1rem;
+    font-weight: 700;
+}
+.manga-volume-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: .375rem;
+    max-inline-size: 19rem;
+}
+.manga-volume {
+    min-block-size: 2.75rem;
+    padding: .25rem;
+    overflow-wrap: anywhere;
+    border: 1px solid var(--green);
+    border-radius: .375rem;
+    background: #fff;
+    color: var(--dark-green);
+    font-weight: 700;
+}
+.manga-volume:hover:not(:disabled),
+.manga-volume[aria-pressed="true"] {
+    background: #eef8ef;
+}
+.manga-volume[aria-pressed="true"] {
+    box-shadow: inset 0 0 0 2px var(--dark-green);
+    border-color: var(--dark-green);
+}
+.manga-volume:disabled {
+    border-color: #8b8b8b;
+    color: #555;
+    background: linear-gradient(to top right, transparent calc(50% - .5px), #777 calc(50% - .5px), #777 calc(50% + .5px), transparent calc(50% + .5px)), #eee;
+    cursor: not-allowed;
+}
 
 :root{
 --green:#087a2f;
