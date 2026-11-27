@@ -18,5 +18,8 @@
         @yield('content')
     </main>
     <x-store.footer />
+    @unless(request()->routeIs('checkout', 'checkout.*'))
+        <x-store.whatsapp-button />
+    @endunless
 </body>
 </html>
