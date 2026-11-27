@@ -8,19 +8,19 @@ La migración agrega `stock_reservations`, con una fila única por pedido y prod
 
 | Estado | Efecto |
 |---|---|
-| `active` | Retiene unidades. Puede consumirse si el webhook procesa la aprobación antes del vencimiento. |
+| `active` | Retiene unidades. Puede consumirse durante su vigencia. |
 | `consumed` | El webhook ya descontó el stock y registró el movimiento de venta. |
-| `expired` | Sigue reteniendo unidades. Cualquier aprobación posterior se registra como incidencia. |
+| `expired` | Retiene unidades. AUD-002 permite consumir una aprobación acreditada dentro de la vigencia aunque el aviso llegue después. |
 | `released` | Las unidades vuelven al saldo disponible. Se conserva el motivo. |
 
-El checkout solicita la preferencia fuera de la transacción y solo entrega la URL si logra persistir la preferencia con la reserva vigente. Ante un fallo antes de publicar la URL libera la reserva y conserva el carrito. El webhook consulta el pago fuera del bloqueo, valida firma, referencia, moneda, importe y preferencia cuando está disponible, y aplica el resultado dentro de la transacción. La fecha límite se evalúa al procesar el webhook, por lo que una notificación retrasada también puede requerir revisión. El checkout de personalizados conserva su flujo.
+El checkout solicita la preferencia fuera de la transacción. Solo el fallo local anterior al POST acredita que no se envió. La conciliación comprueba el detalle del pago antes de aplicar su resultado. Para reservas vencidas, ver la [matriz AUD-002](aud-002-reservas-vencidas.md).
 
 ## Operación y despliegue posterior en Silverhost
 
 1. En una copia aislada, comprobar migración, pruebas y cron. Confirmar PHP CLI compatible, HTTPS, raíz `public/`, permisos y un responsable de conciliación.
 2. Tomar una copia restaurable de la base y pausar el checkout durante el cambio. Aplicar la migración aditiva con `php artisan migrate --force` antes de habilitar el código que consulta la tabla. Regenerar la caché de configuración si se usa.
 3. Configurar el cron para ejecutar `php artisan schedule:run` cada minuto. Verificar `php artisan schedule:list`, el comando `stock:expire-reservations` y el acceso al webhook. El mantenimiento recupera reservas abandonadas antes de publicar la preferencia. La liberación y la publicación se serializan con el bloqueo del pedido.
-4. Revisar las reservas vencidas y cruzar número de pedido, preferencia y todos los intentos en Mercado Pago. Un rechazo individual no acredita el cierre de la preferencia. Mantener la retención si queda un intento incierto. Tras verificar el cierre y resolver cualquier cobro, ejecutar `php artisan stock:release-reservation NUMERO --verified --reason="Referencia de conciliación"`. El comando registra la decisión del operador y es idempotente. El sistema no ejecuta reembolsos.
+4. Listar los pedidos retenidos con `php artisan stock:held-reservations`. Seguir la matriz AUD-002. El indicador `--verified` por sí solo carece de valor probatorio.
 
 ## Reversión conservando registros
 

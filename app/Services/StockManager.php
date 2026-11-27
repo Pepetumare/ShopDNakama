@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\StockMovement;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -39,7 +40,7 @@ class StockManager
     }
 
     // The webhook holds the order lock; every product is locked in stable ID order.
-    public function deductOrder(Order $order): bool
+    public function deductOrder(Order $order, ?Carbon $approvedAt = null): bool
     {
         if ($order->stock_deducted_at) {
             return true;
@@ -65,9 +66,21 @@ class StockManager
             if ($reservations->isEmpty() && $this->reservations->available($products[$id], lock: true) < $quantity) {
                 return false;
             }
-            if ($reservations->isNotEmpty() && (! $reservations->has($id)
-                || ! $this->reservations->isCurrent($reservations[$id]) || (int) $reservations[$id]->quantity !== $quantity)) {
-                return false;
+            if ($reservations->isNotEmpty()) {
+                $row = $reservations->get($id);
+                if (! $row || (int) $row->quantity !== $quantity) {
+                    return false;
+                }
+                $approvedWhileHeld = $row->absolute_window && in_array($row->status, ['active', 'expired'], true)
+                    && $approvedAt && $approvedAt->gte($row->created_at) && $approvedAt->lt($row->expires_at)
+                    && $approvedAt->lte(now());
+                if (! $this->reservations->isCurrent($row) && ! $approvedWhileHeld) {
+                    return false;
+                }
+                $otherHolds = $this->reservations->held($products[$id], lock: true) - $quantity;
+                if ($products[$id]->stock - $quantity < $otherHolds) {
+                    return false;
+                }
             }
         }
         foreach ($physical as $id => $lines) {

@@ -2,15 +2,22 @@
 
 namespace Tests\Feature;
 
+use App\Models\CatalogPaymentWork;
 use App\Models\CheckoutAttempt;
 use App\Models\Order;
 use App\Models\PaymentTransaction;
 use App\Models\User;
 use App\Services\MercadoPagoService;
 use App\Services\PaymentReconciliation;
+use App\Services\StockManager;
 use App\Services\StockReservations;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\TestWith;
 use Tests\StoreTestCase;
 
 class PaymentReconciliationTest extends StoreTestCase
@@ -29,6 +36,127 @@ class PaymentReconciliationTest extends StoreTestCase
             $this->patch(route('housekeeping.orders.status', $order), ['status' => 'enviado'])->assertSessionHasErrors('status');
             $this->assertDatabaseHas('payment_transactions', ['order_id' => $order->id, 'provider_status' => $status]);
         }
+    }
+
+    public function test_delayed_verified_approval_consumes_only_units_still_held_at_approval(): void
+    {
+        $order = $this->order();
+        $service = app(StockReservations::class);
+        $service->reserve($order, $order->items->toArray());
+        $product = $order->items->first()->product;
+        $physical = $product->stock;
+        $approval = now()->addMinute()->toIso8601String();
+        $this->travel(16)->minutes();
+        $service->expire();
+        $this->assertSame($physical - 1, $service->available($product));
+        $this->notify($order, '801', 'approved', ['approved_at' => $approval])->assertOk();
+        $this->notify($order, '801', 'approved', ['approved_at' => $approval])->assertOk();
+        $this->assertDatabaseHas('stock_reservations', ['order_id' => $order->id, 'status' => 'consumed']);
+        $this->assertSame($physical - 1, $product->fresh()->stock);
+        $this->assertSame('confirmed', $order->fresh()->status);
+        $this->assertDatabaseCount('stock_movements', 1);
+        $this->notify($order, '801', 'refunded')->assertOk();
+        $this->assertSame($physical - 1, $product->fresh()->stock);
+        $actor = User::factory()->create(['role' => 'admin']);
+        $stock = app(StockManager::class);
+        $stock->restore($order, $actor->id, 'Devolución recibida');
+        $stock->restore($order, $actor->id, 'Reintento');
+        $this->assertSame($physical, $product->fresh()->stock);
+        $this->assertDatabaseCount('stock_movements', 2);
+    }
+
+    public function test_only_positive_preflight_evidence_releases_and_preserves_audit_on_retry(): void
+    {
+        $order = $this->order();
+        $order->forceFill(['mercadopago_preference_id' => null])->save();
+        $service = app(StockReservations::class);
+        $service->reserve($order, $order->items->toArray());
+        $this->travel(16)->minutes();
+        $this->artisan('stock:expire-reservations')->assertSuccessful();
+        $this->assertNotNull($service->recover($order)['hold']);
+        $this->artisan('stock:held-reservations')->expectsOutputToContain($order->number)->assertSuccessful();
+        $attempt = CheckoutAttempt::create(['order_id' => $order->id, 'state' => CheckoutAttempt::FAILED,
+            'token' => str_repeat('a', 64), 'cart_hash' => str_repeat('b', 64)]);
+        $this->assertNotNull($service->recover($order)['hold']);
+        $attempt->update(['state' => CheckoutAttempt::NOT_SENT]);
+        $this->artisan('stock:expire-reservations')->assertSuccessful();
+        $row = $service->rows($order)->first();
+        $this->assertSame('released', $row->status);
+        $this->assertStringContainsString("intento {$attempt->id}", $row->release_reason);
+        $this->assertSame(0, $service->recover($order, 'Reintento')['released']);
+        $this->assertEquals($row, $service->rows($order)->first());
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    public function test_provider_payment_discovered_against_not_sent_evidence_protects_stock(): void
+    {
+        $order = $this->order();
+        $order->forceFill(['mercadopago_preference_id' => null])->save();
+        CheckoutAttempt::create(['order_id' => $order->id, 'state' => CheckoutAttempt::NOT_SENT,
+            'token' => str_repeat('a', 64), 'cart_hash' => str_repeat('b', 64)]);
+        $service = app(StockReservations::class);
+        $service->reserve($order, $order->items->toArray());
+        $this->notify($order, '802', 'approved')->assertStatus(422);
+        $this->travel(16)->minutes();
+        $service->expire();
+        $this->assertNotNull($service->recover($order)['hold']);
+        $this->assertSame('expired', $service->rows($order)->first()->status);
+    }
+
+    #[TestWith(['released', -1, 5])]
+    #[TestWith(['expired', 0, 5])]
+    #[TestWith(['expired', -1, 0])]
+    public function test_unassignable_approval_blocks_dispatch_and_creates_no_sale(string $state, int $minutes, int $stock): void
+    {
+        $order = $this->order();
+        $service = app(StockReservations::class);
+        $service->reserve($order, $order->items->toArray());
+        $row = $service->rows($order)->first();
+        $order->items->first()->product->update(['stock' => $stock]);
+        DB::table('stock_reservations')->where('id', $row->id)->update(['status' => $state]);
+        $this->travel(20)->minutes();
+        $approved = Carbon::parse($row->expires_at)->addMinutes($minutes);
+        $this->notify($order, '803', 'approved', ['approved_at' => $approved->toIso8601String()])->assertOk();
+        $this->assertSame('paid', $order->fresh()->payment_status);
+        $this->assertNotEmpty($order->fresh()->fulfillment_issue);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->expectException(ValidationException::class);
+        $order->fresh()->assertFulfillable();
+    }
+
+    #[TestWith(['custom'])]
+    #[TestWith(['discovered'])]
+    #[TestWith(['search_error'])]
+    #[TestWith(['incident'])]
+    public function test_contradictory_evidence_blocks_even_a_locally_unsent_attempt(string $evidence): void
+    {
+        $order = $this->order();
+        $order->forceFill(['mercadopago_preference_id' => null])->save();
+        CheckoutAttempt::create(['order_id' => $order->id, 'state' => CheckoutAttempt::NOT_SENT,
+            'token' => str_repeat('a', 64), 'cart_hash' => str_repeat('b', 64)]);
+        $reservations = app(StockReservations::class);
+        $reservations->reserve($order, $order->items->toArray());
+        if ($evidence === 'custom') {
+            $user = User::factory()->create();
+            $quote = $user->customRequests()->create(['customer_name' => $user->name, 'customer_email' => $user->email,
+                'product_type' => 'mug', 'quantity' => 1, 'status' => 'quoted', 'quoted_price' => 10000]);
+            $order->forceFill(['custom_request_id' => $quote->id])->save();
+        } elseif ($evidence === 'discovered') {
+            CatalogPaymentWork::create(['order_id' => $order->id, 'payment_id' => '901', 'next_attempt_at' => now()]);
+        } elseif ($evidence === 'incident') {
+            $order->paymentTransactions()->create(['provider' => 'mercadopago', 'provider_payment_id' => '902',
+                'provider_status' => 'rejected', 'incident' => 'preference_mismatch', 'amount' => 10000,
+                'currency' => 'CLP', 'last_verified_at' => now(), 'correlation_id' => (string) Str::uuid()]);
+        } else {
+            $this->mock(MercadoPagoService::class)->shouldReceive('searchPayments')->once()->andThrow(new \RuntimeException('HTTP 503'));
+            app(PaymentReconciliation::class)->reviewOrder($order, 'scheduler');
+            $this->assertDatabaseHas('catalog_payment_cursors', ['order_id' => $order->id, 'search_failures' => 1]);
+        }
+        $this->travel(16)->minutes();
+        $reservations->expire();
+        $this->artisan('stock:release-reservation', ['order' => $order->number, '--reason' => 'Revisión', '--verified' => true])->assertFailed();
+        $this->assertSame('expired', $reservations->rows($order)->first()->status);
+        $this->assertDatabaseCount('stock_movements', 0);
     }
 
     private function order(array $attributes = []): Order
@@ -214,7 +342,8 @@ class PaymentReconciliationTest extends StoreTestCase
         Http::assertSent(fn ($request) => $request->method() === 'GET'
             && str_contains($request->url(), 'external_reference='.$order->number));
         $this->assertDatabaseHas('payment_reconciliation_events', ['order_id' => $order->id, 'outcome' => 'preference_mismatch']);
-        $this->assertDatabaseCount('payment_transactions', 0);
+        $this->assertDatabaseCount('payment_transactions', 1);
+        $this->assertDatabaseHas('payment_transactions', ['order_id' => $order->id, 'incident' => 'preference_mismatch', 'provider_status' => 'approved']);
         $this->assertSame('pending', $order->fresh()->payment_status);
     }
 }

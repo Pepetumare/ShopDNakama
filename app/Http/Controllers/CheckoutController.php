@@ -76,7 +76,7 @@ class CheckoutController extends Controller
     {
         $rows = $reservations->rows($order);
 
-        return $rows->isNotEmpty() && ! $rows->contains(fn ($row) => $row->status === 'released' || $row->status === 'consumed')
+        return $attempt->state !== CheckoutAttempt::NOT_SENT && $rows->isNotEmpty() && ! $rows->contains(fn ($row) => $row->status === 'released' || $row->status === 'consumed')
             && ($attempt->state !== CheckoutAttempt::READY
                 || (filled($order->mercadopago_checkout_url) && $this->isPayable($order) && $rows->every($reservations->isCurrent(...))));
     }
@@ -187,7 +187,7 @@ class CheckoutController extends Controller
                 $request->user()->newQuery()->whereKey($request->user()->id)->lockForUpdate()->firstOrFail();
                 $attempt = CheckoutAttempt::whereKey($attempt->id)->lockForUpdate()->firstOrFail();
                 $locked = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
-                if ($attempt->state === CheckoutAttempt::FAILED
+                if (in_array($attempt->state, [CheckoutAttempt::FAILED, CheckoutAttempt::NOT_SENT], true)
                     || ($locked->mercadopago_preference_id && $locked->mercadopago_preference_id !== $preference['id'])) {
                     return null;
                 }
@@ -223,7 +223,7 @@ class CheckoutController extends Controller
             }
             DB::transaction(function () use ($attempt, $order, $reservations) {
                 $failed = CheckoutAttempt::whereKey($attempt->id)->where('state', CheckoutAttempt::SENDING)
-                    ->update(['state' => CheckoutAttempt::FAILED]);
+                    ->update(['state' => CheckoutAttempt::NOT_SENT]);
                 if ($failed) {
                     $reservations->releaseUnpublished($order);
                 }

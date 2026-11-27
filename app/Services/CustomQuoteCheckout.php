@@ -2,12 +2,14 @@
 
 namespace App\Services;
 
+use App\Models\CustomPaymentIntent;
 use App\Models\CustomRequest;
 use App\Models\Order;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
+use MercadoPago\Exceptions\MPApiException;
 
 class CustomQuoteCheckout
 {
@@ -66,37 +68,114 @@ class CustomQuoteCheckout
                 ]);
             }
 
+            app(CustomPaymentRecovery::class)->initialize($order, new: true);
+
             return $order;
         }, 3);
     }
 
     public function checkoutUrl(Order $order, User $user, MercadoPagoService $mercadoPago): string
     {
-        // Both local phases persist independently, so an API failure keeps the same pending order.
-        // All custom-payment operations acquire locks in request -> order order.
-        return DB::transaction(function () use ($order, $user, $mercadoPago) {
+        $recovery = app(CustomPaymentRecovery::class);
+        $publish = DB::transaction(function () use ($order, $user, $recovery) {
             $quote = CustomRequest::whereKey($order->custom_request_id)->lockForUpdate()->firstOrFail();
             Gate::forUser($user)->authorize('accept', $quote);
             $this->assertQuoted($quote);
             $locked = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
             $this->assertPayable($locked, $quote, $user);
-            if ($locked->mercadopago_preference_id && $locked->mercadopago_checkout_url) {
-                return $locked->mercadopago_checkout_url;
+            $intent = $recovery->initialize($locked);
+            if (! $recovery->unchanged($locked, $intent)) {
+                throw ValidationException::withMessages(['quote' => 'El pedido requiere revisión antes de continuar el pago.']);
             }
-            if ($locked->mercadopago_preference_id) {
-                // Recover a previously stored preference rather than creating another one.
-                $preference = $mercadoPago->getPreference($locked->mercadopago_preference_id);
-            } else {
-                $preference = $mercadoPago->createPreference($locked->load('items'));
-            }
-            if (! filled($preference['id'] ?? null) || ! is_string($preference['url'] ?? null)
-                || ! filter_var($preference['url'], FILTER_VALIDATE_URL) || parse_url($preference['url'], PHP_URL_SCHEME) !== 'https') {
-                throw new \RuntimeException('Respuesta de preferencia incompleta.');
-            }
-            $locked->forceFill(['mercadopago_preference_id' => $preference['id'], 'mercadopago_checkout_url' => $preference['url']])->save();
+            if ($locked->hasCustomPaymentHold(true)) {
+                $recovery->requireFinancialReview($intent, 'checkout_financial_hold');
 
-            return $preference['url'];
+                return false;
+            }
+            if (! in_array($intent->state, [CustomPaymentIntent::DRAFT, CustomPaymentIntent::FAILED], true)) {
+                return false;
+            }
+            $intent->transition(CustomPaymentIntent::SENDING);
+            $intent->sending_at = now();
+            $intent->outcome = 'publication_claimed';
+            $intent->save();
+            $recovery->event($intent, 'checkout', 'publication_claimed');
+
+            return true;
         }, 3);
+        if ($publish) {
+            $preference = null;
+            try {
+                // Never wrap this external side effect in a retryable database transaction.
+                $preference = $mercadoPago->createPreference($order->fresh()->load('items'));
+                $recovery->locked($order, function (Order $locked, CustomPaymentIntent $intent) use ($preference, $recovery) {
+                    if ($intent->state === CustomPaymentIntent::READY) {
+                        if ($intent->preference_id !== ($preference['id'] ?? null)) {
+                            throw new \RuntimeException('Conflicting preference result');
+                        }
+
+                        return;
+                    }
+                    // Retain a recoverable ID even when the URL is missing or malformed.
+                    if (is_string($preference['id'] ?? null) && preg_match('/\A[a-zA-Z0-9_-]{1,255}\z/', $preference['id'])) {
+                        $intent->preference_id = $preference['id'];
+                    }
+                    if (! $recovery->validResult($preference)) {
+                        $intent->transition(CustomPaymentIntent::UNCERTAIN);
+                        $intent->outcome = 'incomplete_response';
+                    } elseif (! $recovery->unchanged($locked, $intent)) {
+                        $intent->transition(CustomPaymentIntent::UNCERTAIN);
+                        $intent->outcome = 'order_snapshot_changed';
+                    } else {
+                        $intent->transition(CustomPaymentIntent::READY);
+                        $intent->checkout_url = $preference['url'];
+                        $intent->outcome = 'published';
+                        $locked->forceFill(['mercadopago_preference_id' => $preference['id'], 'mercadopago_checkout_url' => $preference['url']])->save();
+                    }
+                    $intent->save();
+                    $recovery->event($intent, 'checkout', $intent->outcome, ['preference_id' => $intent->preference_id]);
+                });
+            } catch (\Throwable $exception) {
+                // Failure to persist this classification still leaves the committed sending state, never draft.
+                $recovery->locked($order, function (Order $locked, CustomPaymentIntent $intent) use ($exception, $recovery, $preference) {
+                    if ($intent->state === CustomPaymentIntent::READY) {
+                        return;
+                    }
+                    $intent->transition($exception instanceof PreferenceNotSent ? CustomPaymentIntent::FAILED : CustomPaymentIntent::UNCERTAIN);
+                    if (is_string($preference['id'] ?? null) && preg_match('/\A[a-zA-Z0-9_-]{1,255}\z/', $preference['id'])) {
+                        $intent->preference_id = $preference['id'];
+                    }
+                    $intent->outcome = $exception instanceof PreferenceNotSent ? 'not_sent' : 'ambiguous_publication';
+                    $intent->save();
+                    $recovery->event($intent, 'checkout', $intent->outcome, ['exception_class' => $exception::class,
+                        'preference_id' => $intent->preference_id,
+                        'http_status' => $exception instanceof MPApiException ? $exception->getApiResponse()->getStatusCode() : null]);
+                });
+                throw $exception;
+            }
+        } else {
+            $recovery->recover($order, $mercadoPago, 'checkout');
+        }
+
+        if ($order->fresh()->hasCustomPaymentHold()) {
+            app(PaymentReconciliation::class)->reviewObservedCustomPayments($order);
+        }
+
+        return $recovery->locked($order, function (Order $locked, CustomPaymentIntent $intent) use ($user) {
+            $quote = CustomRequest::findOrFail($locked->custom_request_id);
+            Gate::forUser($user)->authorize('accept', $quote);
+            $this->assertQuoted($quote);
+            $this->assertPayable($locked, $quote, $user);
+            if ($locked->hasCustomPaymentHold(true)) {
+                throw new CustomPaymentPending;
+            }
+            if ($intent->state !== CustomPaymentIntent::READY || ! $intent->checkout_url
+                || $locked->mercadopago_preference_id !== $intent->preference_id) {
+                throw new CustomPaymentPending;
+            }
+
+            return $intent->checkout_url;
+        });
     }
 
     public function decline(CustomRequest $customRequest, User $user): void

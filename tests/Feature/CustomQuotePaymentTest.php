@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\User;
 use App\Services\ManageCustomQuote;
 use App\Services\MercadoPagoService;
+use App\Services\PreferenceNotSent;
 use Illuminate\Database\QueryException;
 use Illuminate\Validation\ValidationException;
 use Mockery\MockInterface;
@@ -178,10 +179,10 @@ class CustomQuotePaymentTest extends StoreTestCase
         $this->assertSame($order->id, $quote->order()->first()->id);
     }
 
-    public function test_preference_failure_can_retry_the_same_pending_order(): void
+    public function test_confirmed_preflight_failure_can_retry_the_same_pending_order(): void
     {
         $quote = $this->quote();
-        $this->mp->shouldReceive('createPreference')->once()->andThrow(new \RuntimeException('Do not log this API body'));
+        $this->mp->shouldReceive('createPreference')->once()->andThrow(new PreferenceNotSent('Local preflight only'));
         $this->actingAs($quote->user)->post(route('account.custom-requests.accept', $quote), $this->delivery())->assertRedirect(route('account.custom-requests.show', $quote))->assertSessionHasErrors('payment');
         $order = $quote->order()->firstOrFail();
         $this->assertSame('pending', $order->payment_status);
@@ -197,8 +198,8 @@ class CustomQuotePaymentTest extends StoreTestCase
         $quote = $this->quote();
         $order = $this->accept($quote);
         $order->forceFill(['mercadopago_checkout_url' => null])->save();
-        $this->mock(MercadoPagoService::class, fn (MockInterface $mock) => $mock->shouldReceive('getPreference')->with('custom-pref')->once()->andReturn(['id' => 'custom-pref', 'url' => 'https://www.mercadopago.cl/existing']));
-        $this->post(route('account.custom-requests.accept', $quote))->assertRedirect('https://www.mercadopago.cl/existing');
+        // The durable intent now also caches the verified URL; losing the order cache needs no HTTP.
+        $this->post(route('account.custom-requests.accept', $quote))->assertRedirect('https://www.mercadopago.cl/custom-checkout');
         $this->assertDatabaseCount('orders', 1);
     }
 

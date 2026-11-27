@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Models\Order;
 use App\Models\User;
 use App\Services\MercadoPagoService;
+use App\Services\PreferenceNotSent;
 use App\Services\StockReservations;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Mockery\MockInterface;
 use Tests\StoreTestCase;
@@ -148,7 +150,7 @@ class MercadoPagoCheckoutTest extends StoreTestCase
         $this->actingAs(User::factory()->create());
         $product = $this->product();
         $this->post('/carrito', ['product_id' => $product->id, 'quantity' => 1]);
-        $this->mock(MercadoPagoService::class, fn (MockInterface $mock) => $mock->shouldReceive('createPreference')->once()->andThrow(new \App\Services\PreferenceNotSent('API unavailable')));
+        $this->mock(MercadoPagoService::class, fn (MockInterface $mock) => $mock->shouldReceive('createPreference')->once()->andThrow(new PreferenceNotSent('API unavailable')));
         $this->submit()->assertRedirect('/checkout')->assertSessionHasErrors('payment');
         $this->assertDatabaseHas('orders', ['payment_status' => 'pending', 'mercadopago_preference_id' => null]);
         $this->assertDatabaseCount('cart_items', 1);
@@ -191,8 +193,8 @@ class MercadoPagoCheckoutTest extends StoreTestCase
         $this->artisan('stock:release-reservation', ['order' => $order->number])->assertFailed();
         $this->artisan('stock:release-reservation', [
             'order' => $order->number, '--verified' => true, '--reason' => 'Proveedor conciliado en simulación',
-        ])->assertSuccessful();
-        $this->assertSame(8, app(StockReservations::class)->available($product));
+        ])->assertFailed();
+        $this->assertSame(6, app(StockReservations::class)->available($product));
         $this->notify($order)->assertOk();
         $this->assertNotNull($order->fresh()->fulfillment_issue);
         $this->assertSame('pending', $order->fresh()->status);
@@ -332,7 +334,7 @@ class MercadoPagoCheckoutTest extends StoreTestCase
                 $reservation = app(StockReservations::class)->rows($order)->first();
 
                 return Http::response(['id' => 'found', 'external_reference' => $order->number, 'expires' => true,
-                    'expiration_date_to' => \Illuminate\Support\Carbon::parse($reservation->expires_at)->toIso8601String(),
+                    'expiration_date_to' => Carbon::parse($reservation->expires_at)->toIso8601String(),
                     'items' => $order->items->map(fn ($line) => ['id' => (string) $line->product_id, 'quantity' => $line->quantity,
                         'unit_price' => (float) $line->unit_price, 'currency_id' => 'CLP'])->all(),
                     'shipments' => ['cost' => (float) $order->shipping_cost],
@@ -351,14 +353,15 @@ class MercadoPagoCheckoutTest extends StoreTestCase
         $this->assertDatabaseCount('orders', 1);
     }
 
-    public function test_expired_and_released_ready_attempt_never_returns_the_url(): void
+    public function test_expired_ready_attempt_remains_protected_and_never_returns_the_url(): void
     {
         $order = $this->checkout();
         $attempt = $this->attempt();
         $this->travel(16)->minutes();
         $this->post('/checkout', ['attempt' => $attempt, 'resume' => 1])->assertRedirect(route('account.orders.show', $order));
         $this->artisan('stock:expire-reservations')->assertSuccessful();
-        $this->artisan('stock:release-reservation', ['order' => $order->number, '--verified' => true, '--reason' => 'Prueba'])->assertSuccessful();
+        $this->artisan('stock:release-reservation', ['order' => $order->number, '--verified' => true, '--reason' => 'Prueba'])->assertFailed();
+        $this->assertDatabaseHas('stock_reservations', ['order_id' => $order->id, 'status' => 'expired']);
         $this->post('/checkout', ['attempt' => $attempt, 'resume' => 1])->assertRedirect(route('account.orders.show', $order));
         $this->assertDatabaseCount('orders', 1);
     }

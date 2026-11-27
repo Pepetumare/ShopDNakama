@@ -1,9 +1,10 @@
 <?php
 
-use Illuminate\Foundation\Inspiring;
 use App\Models\Order;
+use App\Services\HeldReservations;
 use App\Services\PaymentReconciliation;
 use App\Services\StockReservations;
+use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
@@ -26,13 +27,25 @@ Schedule::command('payments:reconcile')->everyFifteenMinutes()->withoutOverlappi
 Artisan::command('stock:release-reservation {order} {--verified} {--reason=}', function (StockReservations $reservations) {
     $reason = trim((string) $this->option('reason'));
     if (! $this->option('verified') || $reason === '' || mb_strlen($reason) > 255) {
-        $this->error('Confirma la conciliación en el proveedor con --verified y registra el motivo con --reason.');
+        $this->error('Indica --verified y registra el motivo con --reason. Se comprobará la evidencia guardada.');
 
         return 1;
     }
 
     $order = Order::where('number', $this->argument('order'))->firstOrFail();
-    $this->info('Reservas liberadas: '.$reservations->releaseReconciled($order, $reason));
+    $result = $reservations->recover($order, $reason);
+    if ($result['hold'] !== null) {
+        $this->error($result['hold']);
+
+        return 1;
+    }
+    $this->info('Reservas liberadas: '.$result['released']);
 
     return 0;
-})->purpose('Liberar reservas vencidas tras verificar el cierre del intento de pago');
+})->purpose('Liberar reservas vencidas con evidencia de preferencia nunca enviada');
+
+Artisan::command('stock:held-reservations {--after=0}', function (HeldReservations $report) {
+    foreach ($report->after((int) $this->option('after')) as $line) {
+        $this->line($line);
+    }
+})->purpose('Listar reservas vencidas y sus motivos. Continuar con --after=ID.');
