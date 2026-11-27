@@ -41,7 +41,10 @@ return new class extends Migration
                 $table->text('message')->nullable();
                 $table->json('context')->nullable();
                 $table->timestamps();
-                $table->index(['notification_id', 'created_at', 'tne_notification_created_idx']);
+                $table->index(
+                    ['notification_id', 'created_at'],
+                    'tne_notification_created_idx'
+                );
             });
         }
 
