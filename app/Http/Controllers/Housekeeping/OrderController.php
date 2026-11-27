@@ -7,9 +7,12 @@ use App\Http\Requests\Housekeeping\OrderFilterRequest;
 use App\Http\Requests\Housekeeping\UpdateOrderStatusRequest;
 use App\Models\Order;
 use App\Models\User;
+use App\Services\TransactionalNotifications;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class OrderController extends Controller
@@ -54,19 +57,32 @@ class OrderController extends Controller
     public function updateStatus(UpdateOrderStatusRequest $request, Order $order): RedirectResponse
     {
         Gate::authorize('manage', $order);
-        \Illuminate\Support\Facades\DB::transaction(function () use ($request, $order) {
+        DB::transaction(function () use ($request, $order) {
             $locked = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
             $status = $request->validated('status');
             $rank = ['pending' => 0, 'pendiente' => 0, 'confirmed' => 1, 'confirmado' => 1,
                 'preparando' => 2, 'enviado' => 3, 'entregado' => 4, 'cancelado' => 5];
             if ($rank[$status] < ($rank[$locked->status] ?? 5)
                 || ($status === 'cancelado' && in_array($locked->status, ['enviado', 'entregado'], true))) {
-                throw \Illuminate\Validation\ValidationException::withMessages(['status' => 'El estado actual no permite esa transición.']);
+                throw ValidationException::withMessages(['status' => 'El estado actual no permite esa transición.']);
             }
             if (in_array($status, ['confirmed', 'confirmado', 'preparando', 'enviado', 'entregado'], true)) {
                 $locked->assertFulfillable();
             }
+            if ($locked->status === $status) {
+                return false;
+            }
             $locked->update(['status' => $status]);
+
+            $kind = match ($status) {
+                'preparando' => 'preparing', 'enviado' => 'shipped', 'entregado' => 'delivered',
+                'cancelado' => in_array($locked->payment_status, ['refunded', 'reembolsado'], true) ? 'refunded' : 'cancelled', default => null,
+            };
+            if ($kind && filled($locked->customer_email)) {
+                app(TransactionalNotifications::class)->queue($kind, $locked->customer_email, [], $locked, $kind.':'.$locked->id);
+            }
+
+            return true;
         }, 3);
 
         return to_route('housekeeping.orders.show', $order)->with('status', 'Estado del pedido actualizado correctamente.');

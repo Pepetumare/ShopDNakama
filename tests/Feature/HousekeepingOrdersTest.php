@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\Order;
+use App\Models\TransactionalNotification;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 class HousekeepingOrdersTest extends TestCase
@@ -63,6 +65,7 @@ class HousekeepingOrdersTest extends TestCase
 
     public function test_admin_can_change_each_valid_order_status_without_changing_payment_or_amounts(): void
     {
+        Queue::fake();
         $order = $this->order(User::factory()->create(), ['payment_status' => 'pagado']);
         $order->items()->create(['product_name' => 'Histórico', 'quantity' => 1, 'unit_price' => 20000, 'line_total' => 20000]);
         $order->forceFill(['stock_deducted_at' => now()])->save();
@@ -80,6 +83,10 @@ class HousekeepingOrdersTest extends TestCase
         $this->patch(route('housekeeping.orders.status', $order), ['status' => 'cancelado'])->assertSessionHasErrors('status');
         $this->patch(route('housekeeping.orders.status', $order), ['status' => 'pendiente'])->assertSessionHasErrors('status');
         $this->assertSame('entregado', $order->fresh()->status);
+        foreach (['preparing' => 'Preparando', 'shipped' => 'Enviado', 'delivered' => 'Entregado'] as $kind => $status) {
+            $notice = TransactionalNotification::where('order_id', $order->id)->where('type', $kind)->firstOrFail();
+            $this->assertSame($status, $notice->payload['status']);
+        }
     }
 
     public function test_guests_and_normal_users_cannot_enter_any_order_or_customer_admin_route(): void

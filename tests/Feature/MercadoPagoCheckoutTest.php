@@ -88,6 +88,7 @@ class MercadoPagoCheckoutTest extends StoreTestCase
         $this->assertDatabaseHas('orders', ['status' => 'pending', 'payment_status' => 'pending', 'total' => 21990, 'mercadopago_preference_id' => 'pref-1']);
         $this->assertSame(8, $product->fresh()->stock);
         $this->assertDatabaseHas('stock_reservations', ['product_id' => $product->id, 'quantity' => 2, 'status' => 'active']);
+        $this->assertDatabaseHas('transactional_notifications', ['order_id' => Order::firstOrFail()->id, 'type' => 'order_pending']);
         $this->assertDatabaseCount('cart_items', 0);
     }
 
@@ -121,6 +122,7 @@ class MercadoPagoCheckoutTest extends StoreTestCase
         $order = $this->checkout();
         $this->get('/checkout/mercadopago/success?external_reference='.$order->number.'&status=approved')->assertOk()->assertSee('Estamos confirmando tu pago');
         $this->assertSame('pending', $order->fresh()->payment_status);
+        $this->assertDatabaseMissing('transactional_notifications', ['order_id' => $order->id, 'type' => 'payment_confirmed']);
         $this->actingAs(User::factory()->create())->get('/mi-cuenta/pedidos/'.$order->id)->assertForbidden();
     }
 

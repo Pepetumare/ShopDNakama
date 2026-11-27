@@ -4,6 +4,7 @@ use App\Models\Order;
 use App\Services\HeldReservations;
 use App\Services\PaymentReconciliation;
 use App\Services\StockReservations;
+use App\Services\TransactionalNotifications;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -23,6 +24,13 @@ Artisan::command('payments:reconcile', function (PaymentReconciliation $reconcil
 })->purpose('Consultar pagos e incidencias de Mercado Pago sin ejecutar operaciones financieras');
 
 Schedule::command('payments:reconcile')->everyFifteenMinutes()->withoutOverlapping(15);
+
+Artisan::command('notifications:dispatch-pending', function (TransactionalNotifications $notifications) {
+    $count = $notifications->dispatchPending();
+    $this->info('Notificaciones recuperadas para envío: '.$count);
+})->purpose('Recuperar trabajos de correo transaccional que no llegaron a la cola');
+
+Schedule::command('notifications:dispatch-pending')->everyFiveMinutes()->withoutOverlapping();
 
 Artisan::command('stock:release-reservation {order} {--verified} {--reason=}', function (StockReservations $reservations) {
     $reason = trim((string) $this->option('reason'));

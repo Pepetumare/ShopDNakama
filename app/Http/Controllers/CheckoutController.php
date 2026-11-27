@@ -9,6 +9,7 @@ use App\Services\MercadoPagoService;
 use App\Services\PreferenceNotSent;
 use App\Services\ShoppingCart;
 use App\Services\StockReservations;
+use App\Services\TransactionalNotifications;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -160,6 +161,12 @@ class CheckoutController extends Controller
             $order->items()->createMany($lines);
             $reservations->reserve($order, $lines);
             $attempt->update(['order_id' => $order->id, 'delivery_hash' => $deliveryHash, 'state' => CheckoutAttempt::SENDING]);
+
+            if (filled($order->customer_email)) {
+                app(TransactionalNotifications::class)->queue(
+                    'order_pending', $order->customer_email, [], $order, 'order_pending:'.$order->id
+                );
+            }
 
             return [$attempt, $order, 'create'];
         }, 3);

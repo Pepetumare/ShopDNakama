@@ -54,8 +54,11 @@ class PaymentReconciliationTest extends StoreTestCase
         $this->assertDatabaseHas('stock_reservations', ['order_id' => $order->id, 'status' => 'consumed']);
         $this->assertSame($physical - 1, $product->fresh()->stock);
         $this->assertSame('confirmed', $order->fresh()->status);
+        $this->assertDatabaseCount('transactional_notifications', 1);
+        $this->assertDatabaseHas('transactional_notifications', ['order_id' => $order->id, 'type' => 'payment_confirmed']);
         $this->assertDatabaseCount('stock_movements', 1);
         $this->notify($order, '801', 'refunded')->assertOk();
+        $this->assertDatabaseHas('transactional_notifications', ['order_id' => $order->id, 'type' => 'refunded']);
         $this->assertSame($physical - 1, $product->fresh()->stock);
         $actor = User::factory()->create(['role' => 'admin']);
         $stock = app(StockManager::class);

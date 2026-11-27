@@ -69,6 +69,11 @@ class CustomQuoteCheckout
             }
 
             app(CustomPaymentRecovery::class)->initialize($order, new: true);
+            if (filled($order->customer_email)) {
+                app(TransactionalNotifications::class)->queue(
+                    'order_pending', $order->customer_email, [], $order, 'order_pending:'.$order->id
+                );
+            }
 
             return $order;
         }, 3);

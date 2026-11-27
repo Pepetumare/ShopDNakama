@@ -190,6 +190,19 @@ class PaymentReconciliation
                 app(CustomPaymentRecovery::class)->requireFinancialReview($customIntent, $outcome);
             }
             $this->record($source, $correlation, $outcome, $order, $transaction, $id, $actor, $status, dateEvidence: $dateEvidence);
+            if ($outcome === 'updated' && filled($order->customer_email)) {
+                $noticeType = match ($status) {
+                    'approved' => 'payment_confirmed',
+                    'refunded', 'charged_back' => 'refunded',
+                    'cancelled' => 'cancelled',
+                    default => null,
+                };
+                if ($noticeType) {
+                    app(TransactionalNotifications::class)->queue(
+                        $noticeType, $order->customer_email, [], $order, $noticeType.':'.$order->id.':'.$id
+                    );
+                }
+            }
 
             return ['http' => $http, 'result' => $outcome, 'payment' => $details,
                 'payment_status_after' => $order->payment_status, 'order_status_after' => $order->status] + $before;

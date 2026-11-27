@@ -3,6 +3,8 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Notifications\TransactionalEmailVerification;
+use App\Notifications\TransactionalResetPassword;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -18,6 +20,16 @@ class User extends Authenticatable
 
     // Role is deliberately excluded from fillable: public forms cannot promote users.
     protected $attributes = ['role' => 'user'];
+
+    public function sendEmailVerificationNotification(): void
+    {
+        $this->notify(new TransactionalEmailVerification);
+    }
+
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new TransactionalResetPassword($token));
+    }
 
     public function isAdmin(): bool
     {

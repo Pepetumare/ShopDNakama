@@ -4,6 +4,7 @@ use App\Http\Controllers\Housekeeping\CategoryController;
 use App\Http\Controllers\Housekeeping\CollectionController;
 use App\Http\Controllers\Housekeeping\CustomerController;
 use App\Http\Controllers\Housekeeping\CustomRequestController;
+use App\Http\Controllers\Housekeeping\EmailController;
 use App\Http\Controllers\Housekeeping\OrderController;
 use App\Http\Controllers\Housekeeping\PaymentReconciliationController;
 use App\Http\Controllers\Housekeeping\ProductController;
@@ -24,6 +25,8 @@ Route::middleware(['auth', 'admin'])->prefix('housekeeping')->name('housekeeping
     Route::post('/orders/{order}/payments/review', [PaymentReconciliationController::class, 'review'])->middleware('throttle:10,1')->name('payments.review');
     Route::post('/orders/{order}/payments/custom-intent', [PaymentReconciliationController::class, 'customIntent'])->middleware('throttle:10,1')->name('payments.custom-intent');
     Route::post('/payments/{payment}/observations', [PaymentReconciliationController::class, 'annotate'])->name('payments.annotate');
+    Route::get('/emails', [EmailController::class, 'index'])->name('emails.index');
+    Route::post('/emails/{notification}/retry', [EmailController::class, 'retry'])->middleware('throttle:5,1')->name('emails.retry');
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
     Route::get('/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
     Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.status');

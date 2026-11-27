@@ -158,6 +158,7 @@ class CustomQuotePaymentTest extends StoreTestCase
         $this->assertSame('13990.00', $order->total);
         $this->assertSame('Calle Nakama 123', $order->shipping_address_line1);
         $this->assertSame('custom-pref', $order->mercadopago_preference_id);
+        $this->assertDatabaseHas('transactional_notifications', ['order_id' => $order->id, 'type' => 'order_pending']);
         $item = $order->items->first();
         $this->assertNull($item->product_id);
         $this->assertSame('Personalizado '.$quote->request_number, $item->product_name);
